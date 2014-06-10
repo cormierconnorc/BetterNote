@@ -19,6 +19,7 @@
 
 const std::string UI_FILE = "ui_files/betternote.glade";
 const std::string DATABASE_FILE = "database/client.db";
+const std::string DEFAULT_NOTE_TITLE = "Untitled Note";
 
 class NoteWindow : public Gtk::Window
 {
@@ -41,13 +42,18 @@ private:
 	//Visibility update methods
 	void refresh();
 	void showCurNotebooks(), showCurNotes(), showCurNote();
-	void onNotebookSelected(), onNoteSelected();
 	void updateVisibleNote();
 
-	//Notebook update capture method
+	//Notebook update capture methods
+	void onNotebookSelected();
 	void onNotebookRename(const std::vector<evernote::edam::Notebook>& changed);
 	void onNotebookDelete(const std::vector<evernote::edam::Notebook>& deleted);
 	evernote::edam::Notebook createNotebook(const std::string& stackName);
+
+	//Note update capture methods
+	void onNoteSelected();
+	void onNoteDeleted(const evernote::edam::Note& note);
+	evernote::edam::Note createNote();
 
 	//Override default handler to capture tab key
 	virtual bool on_key_press_event(GdkEventKey *event);

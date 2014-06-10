@@ -12,6 +12,8 @@
 #include "evernote_api/src/NoteStore.h"
 #include <webkit/webkitwebview.h>
 
+const std::string NOTE_HEAD = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE en-note SYSTEM \"http://xml.evernote.com/pub/enml2.dtd\">\n";
+
 class NoteView : public Gtk::Box
 {
 public:

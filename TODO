@@ -1,10 +1,11 @@
 TODO List:
 1. Set up local note creation/deletion and notebook renaming.
+--Complete.
+1.5. Add keyboard shortcuts for aforementioned functionality
 2. Resume previous position on note update
 --Complete
 3. Add save and sync buttons (or perhaps menu options)
 4. Multithreaded synchronization (handle through synchronizeAsync method)
 5. Sort notebooks and notes
 6. Notebook drag and drop stack creation
---Mostly implemented, just needs to signal database.
---Relocate onModelCreateStack signal to a point where widgets are fully realized.
+--Complete

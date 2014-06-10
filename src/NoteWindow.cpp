@@ -55,6 +55,8 @@ void NoteWindow::loadObjs(const Glib::RefPtr<Gtk::Builder>& builder)
 
 	//Now for note selector
 	noteSel->signal_note_selected().connect(sigc::mem_fun(*this, &NoteWindow::onNoteSelected));
+	noteSel->signal_note_deleted().connect(sigc::mem_fun(*this, &NoteWindow::onNoteDeleted));
+	noteSel->signal_note_created().connect(sigc::mem_fun(*this, &NoteWindow::createNote));
 	
 	//Get text view
 	builder->get_widget_derived("NoteBox", note);	
@@ -222,6 +224,50 @@ Notebook NoteWindow::createNotebook(const string& stackName)
 	} while (db->getNotebookByGuid(ref, newNote.guid));
 
 	db->addNotebook(newNote);
+	db->flagDirty(newNote);
+
+	return newNote;
+}
+
+void NoteWindow::onNoteDeleted(const Note& note)
+{
+	db->deleteNote(note);
+	db->flagDirty(note);
+}
+
+Note NoteWindow::createNote()
+{
+	Note newNote;
+
+	newNote.__isset.guid = true;
+	newNote.__isset.title = true;
+	newNote.__isset.notebookGuid = true;
+	newNote.__isset.content = true;
+
+	Note ref;
+
+	//Generate the Guid
+	do
+	{
+		newNote.guid = Util::genGuid();
+	} while (db->getNoteByGuid(ref, newNote.guid));
+
+
+	//Set the note's name to a default, it really doesn't matter
+	newNote.title = DEFAULT_NOTE_TITLE;
+
+	//Set notebook GUID to first active notebook in list. If none active, throw exception
+	const vector<Guid> active = notebookSel->getActiveNotebooks();
+
+	if (active.size() > 0)
+		newNote.notebookGuid = active[0];
+	else
+		throw runtime_error("No active notebook");
+
+	//Set note content to default header with mandatory <en-note></en-note> tags
+	newNote.content = NOTE_HEAD + "<en-note></en-note>";
+	
+	db->addNote(newNote);
 	db->flagDirty(newNote);
 
 	return newNote;
