@@ -44,6 +44,7 @@ public:
 	//Special notebook tasks. Always returns true (no fail case, returns bool for consistency)
 	bool getNotesInNotebook(std::vector<evernote::edam::Note>& ret, const evernote::edam::Notebook& notebook);
 	bool getNotesMetadataInNotebook(evernote::edam::NotesMetadataList& ans, const evernote::edam::Notebook& notebook);
+	bool deleteNotesInNotebook(const evernote::edam::Notebook& notebook);
 
 	//Note retrieval methods. Return value indicates success.
 	bool getNotes(std::vector<evernote::edam::Note>& ret);
@@ -53,6 +54,8 @@ public:
 	bool addNote(const evernote::edam::Note& note);
 	bool updateNote(const evernote::edam::Note& note);
 	bool removeNote(const evernote::edam::Note& note);
+	bool deleteNote(const evernote::edam::Note& note);
+	bool purgeDeletedNotes();
 
 	//Dirty query methods. Return value, as always, indicates success.
 	bool getDirtyNotebooks(std::vector<evernote::edam::Notebook>& ret);
@@ -69,6 +72,7 @@ public:
 	//Methods to flag dirty. Return value indicates operation success.
 	bool flagDirty(const evernote::edam::Notebook& notebook);
 	bool flagDirty(const evernote::edam::Note& note);
+	bool flagNotesInNotebookDirty(const evernote::edam::Notebook& notebook);
 
 	//Methods to unflag dirty. Return values indicates operation success.
 	bool unflagDirty(const evernote::edam::Notebook& notebook);
@@ -91,17 +95,21 @@ private:
 			*sRemoveNotebook,
 			*sGetNotesInNotebook,
 			*sGetNotesMetadataInNotebook,
+			*sDeleteNotesInNotebook,
 			*sGetNotes,
 			*sGetNoteByGuid,
 			*sAddNote,
 			*sUpdateNote,
 			*sRemoveNote,
+			*sDeleteNote,
+			*sPurgeDeletedNotes,
 			*sGetDirtyNotebooks,
 			*sGetDirtyNotes,
 			*sIsNotebookDirty,
 			*sIsNoteDirty,
 			*sSetNotebookDirty,
-			*sSetNoteDirty;
+			*sSetNoteDirty,
+			*sFlagNotesInNotebookDirty;
 
 
 	//Method to execute statement synchronously with no result returned

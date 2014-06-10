@@ -14,10 +14,8 @@ using namespace evernote::edam;
 using namespace apache::thrift::protocol;
 using namespace apache::thrift::transport;
 
-EvernoteClient::EvernoteClient() : lastUpdateCount(0)
+EvernoteClient::EvernoteClient(DatabaseClient *db) : db(db), lastUpdateCount(0)
 {
-	db = new DatabaseClient(DATABASE_FILE);
-	
 	//Temporary
 	authenticateDev();
 	setupClient();
@@ -28,7 +26,7 @@ EvernoteClient::EvernoteClient() : lastUpdateCount(0)
 
 EvernoteClient::~EvernoteClient()
 {
-	delete db;
+
 }
 
 void EvernoteClient::synchronize()
@@ -62,7 +60,12 @@ void EvernoteClient::synchronize()
 		synchronize();
 	//Otherwise, emit the complete signal
 	else
+	{
+		//Locally purge deleted notes (currently no trash features)
+		db->purgeDeletedNotes();
+		
 		signalOnSyncComplete.emit();
+	}
 }
 
 void EvernoteClient::synchronizeAsync()
@@ -130,13 +133,10 @@ void EvernoteClient::processChunk(const SyncChunk& chunk, bool fullSync)
 		//Notebook exists on both client and server
 		if (db->getNotebookByGuid(lBook, sBook.guid))
 		{
-			if (sBook.updateSequenceNum > lBook.updateSequenceNum)
+			if (sBook.updateSequenceNum > lBook.updateSequenceNum && !db->isNotebookDirty(lBook))
 			{
-				//Whether dirty or not, just keep the server's version for the notebook. The worst case scenario is a change away from the client's new name, which won't break anything. Better than the unwieldy conflict resolution alternatives.
+				//If not dirty, just update. Otherwise, use the clients version
 				db->updateNotebook(sBook);
-
-				//Newly updated notebook cannot be dirty
-				db->unflagDirty(lBook);
 			}
 		}
 		//Notebook name conflict
@@ -203,7 +203,7 @@ void EvernoteClient::processChunk(const SyncChunk& chunk, bool fullSync)
 				if (!dirty)
 				{
 					//Get full note info
-					this->getNoteFromService(sNote, sNote.guid);
+					this->getNote(sNote, sNote.guid);
 
 					//Update it in the database
 					db->updateNote(sNote);
@@ -221,7 +221,7 @@ void EvernoteClient::processChunk(const SyncChunk& chunk, bool fullSync)
 		else
 		{
 			//Get full note info
-			this->getNoteFromService(sNote, sNote.guid);
+			this->getNote(sNote, sNote.guid);
 
 			//Add to the database
 			db->addNote(sNote);
@@ -266,6 +266,15 @@ bool EvernoteClient::sendClientChanges()
 		{
 			try
 			{
+				//Shitty workaround to the fact that I set delete instead of active
+				//Damn, that was stupid, but this single condition should fix it.
+				if (dNote.__isset.deleted)
+				{
+					dNote.__isset.deleted = false;
+					dNote.__isset.active = true;
+					dNote.active = false;
+				}
+				
 				nStore->updateNote(dNote, devToken, dNote);
 
 				//Update note in database
@@ -368,12 +377,8 @@ bool EvernoteClient::sendClientChanges()
 	return needResync;
 }
 
-void EvernoteClient::getNotebooks(vector<Notebook>& notes)
-{
-	db->getNotebooks(notes);
-}
 
-void EvernoteClient::getNotebooksFromService(vector<Notebook>& notes)
+void EvernoteClient::getNotebooks(vector<Notebook>& notes)
 {
 	try
 	{
@@ -386,15 +391,6 @@ void EvernoteClient::getNotebooksFromService(vector<Notebook>& notes)
 }
 
 void EvernoteClient::getNotesInNotebook(NotesMetadataList& ans, const Guid& notebook)
-{
-	//Required to maintain database model
-	Notebook note;
-	note.guid = notebook;
-
-	db->getNotesMetadataInNotebook(ans, note);
-}
-
-void EvernoteClient::getNotesInNotebookFromService(NotesMetadataList& ans, const Guid& notebook)
 {
 	//Define filter
 	NoteFilter filter;
@@ -411,18 +407,7 @@ void EvernoteClient::getNotesInNotebookFromService(NotesMetadataList& ans, const
 
 void EvernoteClient::getNote(Note& note, const Guid& nGuid)
 {
-	db->getNoteByGuid(note, nGuid);
-}
-
-void EvernoteClient::getNoteFromService(Note& note, const Guid& nGuid)
-{
 	nStore->getNote(note, devToken, nGuid, true, false, false, false);
-}
-
-void EvernoteClient::updateNote(const Note& note)
-{
-	db->updateNote(note);
-	db->flagDirty(note);
 }
 
 sigc::signal<void>& EvernoteClient::signal_on_sync_complete()

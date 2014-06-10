@@ -7,9 +7,14 @@
 #include <gtkmm/application.h>
 #include <iostream>
 #include "NoteWindow.h"
+#include <cstdlib>
+#include <ctime>
 
 int main(int argc, char **argv)
 {
+	//Seed random number generator, needed throughout program
+	srand(time(NULL));
+	
 	Glib::RefPtr<Gtk::Application> app = Gtk::Application::create(argc, argv);
 
 	//Set up a builder instance

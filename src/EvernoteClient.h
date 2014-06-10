@@ -18,14 +18,13 @@
 #include <sigc++/sigc++.h>
 
 
-const std::string DATABASE_FILE = "database/client.db";
 const std::string USER_AGENT = "BetterNote InDev";
 const int MAX_ENTRIES = 250;
 
 class EvernoteClient
 {
 public:
-	EvernoteClient();
+	EvernoteClient(DatabaseClient *db);
 	virtual ~EvernoteClient();
 
 	//Sync methods
@@ -45,16 +44,13 @@ public:
 	
 	//Get all notebooks associated with current account
 	void getNotebooks(std::vector<evernote::edam::Notebook>& notes);
-	void getNotebooksFromService(std::vector<evernote::edam::Notebook>& notes);
 
 	//Get the names of all notes in notebook with given Guid, no Guid for all notes
 	//Returned notes do not contain content!
 	void getNotesInNotebook(evernote::edam::NotesMetadataList& ans, const evernote::edam::Guid& notebook);
-	void getNotesInNotebookFromService(evernote::edam::NotesMetadataList& ans, const evernote::edam::Guid& notebook);
 
 	//Get a note
 	void getNote(evernote::edam::Note& note, const evernote::edam::Guid& nGuid);
-	void getNoteFromService(evernote::edam::Note& note, const evernote::edam::Guid& nGuid);
 
 	//Update a note in the database
 	void updateNote(const evernote::edam::Note& note);

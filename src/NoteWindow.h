@@ -15,8 +15,10 @@
 #include "NoteView.h"
 #include "NotebookSelector.h"
 #include "NoteSelector.h"
+#include "BetternoteUtils.h"
 
 const std::string UI_FILE = "ui_files/betternote.glade";
+const std::string DATABASE_FILE = "database/client.db";
 
 class NoteWindow : public Gtk::Window
 {
@@ -27,6 +29,7 @@ public:
 
 private:
 	//Fields
+	DatabaseClient *db;
 	EvernoteClient *client;
 	NoteView *note;
 	NotebookSelector *notebookSel;
@@ -40,6 +43,11 @@ private:
 	void showCurNotebooks(), showCurNotes(), showCurNote();
 	void onNotebookSelected(), onNoteSelected();
 	void updateVisibleNote();
+
+	//Notebook update capture method
+	void onNotebookRename(const std::vector<evernote::edam::Notebook>& changed);
+	void onNotebookDelete(const std::vector<evernote::edam::Notebook>& deleted);
+	evernote::edam::Notebook createNotebook(const std::string& stackName);
 
 	//Override default handler to capture tab key
 	virtual bool on_key_press_event(GdkEventKey *event);

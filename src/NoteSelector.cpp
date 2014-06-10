@@ -47,6 +47,14 @@ void NoteSelector::setNoteList(const vector<NoteMetadata>& noteList)
 
 	for (vector<NoteMetadata>::const_iterator it = noteList.begin(); it != noteList.end(); it++)
 		addNote(*it);
+
+	//Select the previously active note if possible
+	if (activeNote != "")
+	{
+		for (Gtk::TreeModel::iterator it = treeModel->children().begin(); it != treeModel->children().end(); it++)
+			if (activeNote == it->get_value(colModel.guid))
+				view.get_selection()->select(*it);
+	}
 }
 
 void NoteSelector::addNote(const NoteMetadata& note)

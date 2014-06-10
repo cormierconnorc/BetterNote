@@ -7,6 +7,7 @@
 #include "DatabaseClient.h"
 #include <iostream>
 #include <sstream>
+#include <ctime>
 
 using namespace std;
 using namespace evernote::edam;
@@ -249,6 +250,22 @@ bool DatabaseClient::getNotesMetadataInNotebook(NotesMetadataList& ans, const No
 	return true;
 }
 
+bool DatabaseClient::deleteNotesInNotebook(const Notebook& notebook)
+{
+	//Bind time of deletion
+	//Move away from ctime?
+	sqlite3_bind_int64(sDeleteNotesInNotebook, 1, time(NULL) * 1000);
+
+	//Bind notebook guid
+	sqlite3_bind_text(sDeleteNotesInNotebook, 2, notebook.guid.c_str(), -1, SQLITE_STATIC);
+
+	bool ret = execSyncNoRes(sDeleteNotesInNotebook);
+
+	sReset(sDeleteNotesInNotebook);
+
+	return ret;
+}
+
 bool DatabaseClient::getNotes(vector<Note>& ret)
 {
 	fetchNotes(ret, sGetNotes);
@@ -314,6 +331,29 @@ bool DatabaseClient::removeNote(const Note& note)
 
 	sReset(sRemoveNote);
 
+	return ret;
+}
+
+bool DatabaseClient::deleteNote(const Note& note)
+{
+	//Bind time of deletion
+	//Move away from ctime?
+	sqlite3_bind_int64(sDeleteNote, 1, time(NULL) * 1000);
+
+	//Bind notebook guid
+	sqlite3_bind_text(sDeleteNote, 2, note.guid.c_str(), -1, SQLITE_STATIC);
+
+	bool ret = execSyncNoRes(sDeleteNote);
+
+	sReset(sDeleteNote);
+
+	return ret;
+}
+
+bool DatabaseClient::purgeDeletedNotes()
+{
+	bool ret = execSyncNoRes(sPurgeDeletedNotes);
+	sReset(sPurgeDeletedNotes);
 	return ret;
 }
 
@@ -427,6 +467,20 @@ bool DatabaseClient::flagDirty(const Notebook& notebook)
 bool DatabaseClient::flagDirty(const Note& note)
 {
 	return setDirty(note, true);
+}
+
+bool DatabaseClient::flagNotesInNotebookDirty(const Notebook& notebook)
+{
+	//Convenience alias (I'm feeling a bit lazy)
+	sqlite3_stmt *s = sFlagNotesInNotebookDirty;
+
+	sqlite3_bind_text(s, 1, notebook.guid.c_str(), -1, SQLITE_STATIC);
+
+	bool ret = execSyncNoRes(s);
+
+	sReset(s);
+
+	return ret;
 }
 
 bool DatabaseClient::unflagDirty(const Notebook& notebook)
@@ -555,19 +609,23 @@ void DatabaseClient::prepareStatements()
 	sqlite3_prepare_v2(db, "insert into notebooks values (?, ?, ?, ?, ?, ?)", -1, &sAddNotebook, 0);
 	sqlite3_prepare_v2(db, "update notebooks set guid=?,name=?,usn=?,isDefault=?,stack=?,dirty=? where guid=?", -1, &sUpdateNotebook, 0);
 	sqlite3_prepare_v2(db, "delete from notebooks where guid=?", -1, &sRemoveNotebook, 0);
-	sqlite3_prepare_v2(db, "select * from notes where notebookGuid=?", -1, &sGetNotesInNotebook, 0);
-	sqlite3_prepare_v2(db, "select guid,title,deleted,usn,notebookGuid from notes where notebookGuid=?", -1, &sGetNotesMetadataInNotebook, 0);
-	sqlite3_prepare_v2(db, "select * from notes", -1, &sGetNotes, 0);
+	sqlite3_prepare_v2(db, "select * from notes where notebookGuid=? and deleted=-1", -1, &sGetNotesInNotebook, 0);
+	sqlite3_prepare_v2(db, "select guid,title,deleted,usn,notebookGuid from notes where notebookGuid=? and deleted=-1", -1, &sGetNotesMetadataInNotebook, 0);
+	sqlite3_prepare_v2(db, "update notes set deleted=? where notebookGuid=? and deleted=-1", -1, &sDeleteNotesInNotebook, 0);
+	sqlite3_prepare_v2(db, "select * from notes where deleted=-1", -1, &sGetNotes, 0);
 	sqlite3_prepare_v2(db, "select * from notes where guid=?", -1, &sGetNoteByGuid, 0);
 	sqlite3_prepare_v2(db, "insert into notes values (?, ?, ?, ?, ?, ?, ?)", -1, &sAddNote, 0);
 	sqlite3_prepare_v2(db, "update notes set guid=?,title=?,content=?,deleted=?,usn=?,notebookGuid=?,dirty=? where guid=?", -1, &sUpdateNote, 0);
 	sqlite3_prepare_v2(db, "delete from notes where guid=?", -1, &sRemoveNote, 0);
+	sqlite3_prepare_v2(db, "update notes set deleted=? where guid=?", -1, &sDeleteNote, 0);
+	sqlite3_prepare_v2(db, "delete from notes where deleted!=-1", -1, &sPurgeDeletedNotes, 0);
 	sqlite3_prepare_v2(db, "select * from notebooks where dirty!=0", -1, &sGetDirtyNotebooks, 0);
 	sqlite3_prepare_v2(db, "select * from notes where dirty!=0", -1, &sGetDirtyNotes, 0);
 	sqlite3_prepare_v2(db, "select dirty from notebooks where guid=?", -1, &sIsNotebookDirty, 0);
 	sqlite3_prepare_v2(db, "select dirty from notes where guid=?", -1, &sIsNoteDirty, 0);
 	sqlite3_prepare_v2(db, "update notebooks set dirty=? where guid=?", -1, &sSetNotebookDirty, 0);
 	sqlite3_prepare_v2(db, "update notes set dirty=? where guid=?", -1, &sSetNoteDirty, 0);
+	sqlite3_prepare_v2(db, "update notes set dirty=1 where notebookGuid=?", -1, &sFlagNotesInNotebookDirty, 0);
 }
 
 void DatabaseClient::finalizeStatements()
@@ -584,17 +642,21 @@ void DatabaseClient::finalizeStatements()
 	sqlite3_finalize(sRemoveNotebook);
 	sqlite3_finalize(sGetNotesInNotebook);
 	sqlite3_finalize(sGetNotesMetadataInNotebook);
+	sqlite3_finalize(sDeleteNotesInNotebook);
 	sqlite3_finalize(sGetNotes);
 	sqlite3_finalize(sGetNoteByGuid);
 	sqlite3_finalize(sAddNote);
 	sqlite3_finalize(sUpdateNote);
 	sqlite3_finalize(sRemoveNote);
+	sqlite3_finalize(sDeleteNote);
+	sqlite3_finalize(sPurgeDeletedNotes);
 	sqlite3_finalize(sGetDirtyNotebooks);
 	sqlite3_finalize(sGetDirtyNotes);
 	sqlite3_finalize(sIsNotebookDirty);
 	sqlite3_finalize(sIsNoteDirty);
 	sqlite3_finalize(sSetNotebookDirty);
 	sqlite3_finalize(sSetNoteDirty);
+	sqlite3_finalize(sFlagNotesInNotebookDirty);
 }
 
 void DatabaseClient::sReset(sqlite3_stmt *stat)

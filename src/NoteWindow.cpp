@@ -14,11 +14,13 @@ using namespace evernote::edam;
 
 NoteWindow::NoteWindow(BaseObjectType* cObj, const Glib::RefPtr<Gtk::Builder>& builder) : Gtk::Window(cObj)
 {
+	db = new DatabaseClient(DATABASE_FILE);
+	
 	//Setup client
-	client = new EvernoteClient;
+	client = new EvernoteClient(db);
 
 	//Have the client notify the note window upon sync complete
-	client->signal_on_sync_complete().connect(sigc::mem_fun(this, &NoteWindow::refresh));
+	client->signal_on_sync_complete().connect(sigc::mem_fun(*this, &NoteWindow::refresh));
 	
 	loadObjs(builder);
 
@@ -31,9 +33,10 @@ NoteWindow::NoteWindow(BaseObjectType* cObj, const Glib::RefPtr<Gtk::Builder>& b
 }
 
 NoteWindow::~NoteWindow()
-{
+{	
 	delete client;
 
+	delete db;
 	//Children of the NoteWindow are managed thanks to the builder, so no need to
 	//explicitly delete them.
 }
@@ -44,8 +47,13 @@ void NoteWindow::loadObjs(const Glib::RefPtr<Gtk::Builder>& builder)
 	builder->get_widget_derived("NotebookSelector", notebookSel);
 	builder->get_widget_derived("NoteSelector", noteSel);
 
-	//Set callbacks for each
+	//Set callbacks for notebook selector 
 	notebookSel->signal_notebook_change().connect(sigc::mem_fun(*this, &NoteWindow::onNotebookSelected));
+	notebookSel->signal_notebook_rename().connect(sigc::mem_fun(*this, &NoteWindow::onNotebookRename));
+	notebookSel->signal_notebook_delete().connect(sigc::mem_fun(*this, &NoteWindow::onNotebookDelete));
+	notebookSel->signal_notebook_create().connect(sigc::mem_fun(*this, &NoteWindow::createNotebook));
+
+	//Now for note selector
 	noteSel->signal_note_selected().connect(sigc::mem_fun(*this, &NoteWindow::onNoteSelected));
 	
 	//Get text view
@@ -63,7 +71,7 @@ void NoteWindow::showCurNotebooks()
 {
 	//Update notebooks using evernote client
 	vector<Notebook> notebooks;
-	client->getNotebooks(notebooks);
+	db->getNotebooks(notebooks);
 
 	//Now set the notebook selector's notebook list to this list
 	notebookSel->setNotebookList(notebooks);
@@ -74,11 +82,15 @@ void NoteWindow::showCurNotes()
 	const vector<Guid> activeNotes = notebookSel->getActiveNotebooks();
 	vector<NoteMetadata> relData;
 
+	Notebook n;
+	
 	for (size_t i = 0; i < activeNotes.size(); i++)
 	{
 		NotesMetadataList list;
 
-		client->getNotesInNotebook(list, activeNotes[i]);
+		n.guid = activeNotes[i];
+
+		db->getNotesMetadataInNotebook(list, n);
 		relData.insert(relData.end(), list.notes.begin(), list.notes.end());
 	}
 
@@ -96,7 +108,7 @@ void NoteWindow::showCurNote()
 
 	//Get the note
 	Note note;
-	client->getNote(note, noteSel->getActiveNote());
+	db->getNoteByGuid(note, noteSel->getActiveNote());
 
 	//Give it to the buffer
 	this->note->showNote(note);
@@ -122,7 +134,10 @@ void NoteWindow::onNoteSelected()
 
 void NoteWindow::updateVisibleNote()
 {
-	client->updateNote(note->getNote());
+	const Note& n = note->getNote();
+	
+	db->updateNote(n);
+	db->flagDirty(n);
 
 	/*Only relevant for direct update
 	//Get the note associated with the metadata in newNote
@@ -130,6 +145,86 @@ void NoteWindow::updateVisibleNote()
 	
 	note->showNote(newNote);
 	*/
+}
+
+void NoteWindow::onNotebookRename(const vector<Notebook>& changed)
+{
+	for (vector<Notebook>::const_iterator it = changed.begin(); it != changed.end(); it++)
+	{
+		Notebook n = *it;
+
+		Notebook ref;
+
+		//Only continue with renaming if notebook was found in database
+		if (db->getNotebookByGuid(ref, n.guid))
+		{
+			//Consolidate reference notebook (from db) with new material in "n"
+			if (n.__isset.name)
+			{
+				ref.__isset.name = true;
+				ref.name = n.name;
+			}
+			
+			if (n.__isset.stack)
+			{
+				ref.__isset.stack = true;
+				ref.stack = n.stack;
+			}
+
+			//Now update in the database using the reference notebook
+			db->updateNotebook(ref);
+
+			//Rename to avoid conflicts (does nothing if no conflict)
+			db->renameNotebook(ref);
+			
+			db->flagDirty(ref);
+		}
+	}
+
+	//Refresh notebook list
+	showCurNotebooks();
+}
+
+void NoteWindow::onNotebookDelete(const vector<Notebook>& deleted)
+{
+	for (size_t t = 0; t < deleted.size(); t++)
+	{
+		//Remove notebook from database.
+		//Note: Just removes, does not actually delete on server (which I can't do with the permissions afforded to this application)
+		db->removeNotebook(deleted[t]);
+
+		//Now flag each note as deleted
+		db->deleteNotesInNotebook(deleted[t]);
+
+		//Make sure each is flaged as dirty
+		db->flagNotesInNotebookDirty(deleted[t]);
+	}
+
+	//Refresh entire list this time, unlike the simple rename.
+	refresh();
+}
+
+Notebook NoteWindow::createNotebook(const string& stackName)
+{
+	Notebook newNote;
+
+	newNote.__isset.guid = true;
+	newNote.__isset.name = true;
+	newNote.__isset.stack = (stackName != "");
+	newNote.stack = stackName;
+
+	Notebook ref;
+
+	//Continually try to generate the GUID while it is not unique (VERY unlikely to have conflicts, but worth checking since my generation scheme might not be random enough)
+	do
+	{
+		newNote.guid = Util::genGuid();
+	} while (db->getNotebookByGuid(ref, newNote.guid));
+
+	db->addNotebook(newNote);
+	db->flagDirty(newNote);
+
+	return newNote;
 }
 
 bool NoteWindow::on_key_press_event(GdkEventKey *event)
