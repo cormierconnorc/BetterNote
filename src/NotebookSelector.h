@@ -27,6 +27,7 @@ public:
 	sigc::signal<void, const std::vector<evernote::edam::Notebook>&>& signal_notebook_rename();
 	sigc::signal<void, const std::vector<evernote::edam::Notebook>&>& signal_notebook_delete();
 	sigc::signal<evernote::edam::Notebook, const std::string&>& signal_notebook_create();
+	sigc::signal<bool, const evernote::edam::Guid&, const evernote::edam::Guid&>& signal_note_change_notebook();
 
 	//Way to update post-callback trigger
 	const std::vector<evernote::edam::Guid>& getActiveNotebooks();

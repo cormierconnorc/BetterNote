@@ -65,6 +65,8 @@ void EvernoteClient::synchronize()
 		db->purgeDeletedNotes();
 		
 		signalOnSyncComplete.emit();
+
+		cout << "Done synchronizing!" << endl;
 	}
 }
 

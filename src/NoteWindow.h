@@ -49,6 +49,7 @@ private:
 	void onNotebookRename(const std::vector<evernote::edam::Notebook>& changed);
 	void onNotebookDelete(const std::vector<evernote::edam::Notebook>& deleted);
 	evernote::edam::Notebook createNotebook(const std::string& stackName);
+	bool onNoteChangeNotebook(const evernote::edam::Guid& noteGuid, const evernote::edam::Guid& notebookGuid);
 
 	//Note update capture methods
 	void onNoteSelected();

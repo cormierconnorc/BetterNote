@@ -1,11 +1,19 @@
 TODO List:
-1. Set up local note creation/deletion and notebook renaming.
+N. Set up local note creation/deletion and notebook renaming.
 --Complete.
-1.5. Add keyboard shortcuts for aforementioned functionality
-2. Resume previous position on note update
+N. Add keyboard shortcuts for aforementioned functionality
 --Complete
-3. Add save and sync buttons (or perhaps menu options)
-4. Multithreaded synchronization (handle through synchronizeAsync method)
-5. Sort notebooks and notes
-6. Notebook drag and drop stack creation
+N. Resume previous position on note update
 --Complete
+N. Add save and sync buttons (or perhaps menu options)
+N. Multithreaded synchronization (handle through synchronizeAsync method)
+N. Sort notebooks and notes
+--Not very important, may want to move on to user authentication first.
+N. Notebook drag and drop stack creation
+--Complete
+N. Allow notes to be moved to another stack via drag and drop.
+--To do this, define a custom ListStore for the NoteSelector that sends the note GUID as a STRING target. Have the NotebookSelector's treeview receive STRING targets from other widgets ONLY, thus allowing those signals to be distinguished from internal dnd.
+--Complete
+A1. SSH
+A2. OAuth
+A3. User authentication

@@ -52,6 +52,7 @@ void NoteWindow::loadObjs(const Glib::RefPtr<Gtk::Builder>& builder)
 	notebookSel->signal_notebook_rename().connect(sigc::mem_fun(*this, &NoteWindow::onNotebookRename));
 	notebookSel->signal_notebook_delete().connect(sigc::mem_fun(*this, &NoteWindow::onNotebookDelete));
 	notebookSel->signal_notebook_create().connect(sigc::mem_fun(*this, &NoteWindow::createNotebook));
+	notebookSel->signal_note_change_notebook().connect(sigc::mem_fun(*this, &NoteWindow::onNoteChangeNotebook));
 
 	//Now for note selector
 	noteSel->signal_note_selected().connect(sigc::mem_fun(*this, &NoteWindow::onNoteSelected));
@@ -229,6 +230,31 @@ Notebook NoteWindow::createNotebook(const string& stackName)
 	return newNote;
 }
 
+bool NoteWindow::onNoteChangeNotebook(const Guid& noteGuid, const Guid& notebookGuid)
+{
+	//Try to get the reference note
+	Note ref;
+	Notebook refNotebook;
+
+	//If the note does not exist or the notebook does not exist (checked for extra safety), then fail.
+	if (!db->getNoteByGuid(ref, noteGuid) || !db->getNotebookByGuid(refNotebook, notebookGuid))
+		return false;
+
+	//Update notebook
+	ref.notebookGuid = notebookGuid;
+
+	if (!db->updateNote(ref))
+		return false;
+
+	if (!db->flagDirty(ref))
+		return false;
+
+	//Refresh the note selector after the update
+	showCurNotes();
+	
+	return true;
+}
+
 void NoteWindow::onNoteDeleted(const Note& note)
 {
 	db->deleteNote(note);
@@ -302,6 +328,16 @@ bool NoteWindow::onKeyPress(GdkEventKey *event)
 		{
 			case GDK_KEY_s:
 				updateVisibleNote();
+				return true;
+		}
+	}
+	//No control
+	else
+	{
+		switch (event->keyval)
+		{
+			case GDK_KEY_F5:
+				refresh();
 				return true;
 		}
 	}

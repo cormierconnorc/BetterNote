@@ -29,6 +29,12 @@ NotebookSelector::NotebookSelector(BaseObjectType *cObj, const Glib::RefPtr<Gtk:
 	view.set_activate_on_single_click(true);
 
 	view.set_reorderable(true);
+
+	//Set up the targets for drag and drop on this treeview
+	vector<Gtk::TargetEntry> dragTargets;
+	dragTargets.push_back(Gtk::TargetEntry("GTK_TREE_MODEL_ROW", Gtk::TARGET_SAME_APP|Gtk::TARGET_SAME_WIDGET));
+	dragTargets.push_back(Gtk::TargetEntry("STRING", Gtk::TARGET_SAME_APP|Gtk::TARGET_OTHER_WIDGET));
+	view.enable_model_drag_dest(dragTargets);
 	
 	//Connect row selection with appropriate method
 	view.signal_row_activated().connect(sigc::mem_fun(*this, &NotebookSelector::onRowSelected));
@@ -186,6 +192,11 @@ sigc::signal<void, const vector<Notebook>&>& NotebookSelector::signal_notebook_d
 sigc::signal<Notebook, const string&>& NotebookSelector::signal_notebook_create()
 {
 	return notebook_create_sig;
+}
+
+sigc::signal<bool, const Guid&, const Guid&>& NotebookSelector::signal_note_change_notebook()
+{
+	return treeModel->signal_note_change_notebook();
 }
 
 const vector<Guid>& NotebookSelector::getActiveNotebooks()
@@ -499,6 +510,7 @@ void NotebookSelector::onRowSelected(const Gtk::TreeModel::Path& path, Gtk::Tree
 
 bool NotebookSelector::onKeyPress(GdkEventKey *event)
 {
+	//Handlers for selection-dependent key presses
 	if (event->keyval == GDK_KEY_F2 || event->keyval == GDK_KEY_Delete)
 	{
 		vector<Gtk::TreeModel::Path> selected = view.get_selection()->get_selected_rows();
@@ -512,6 +524,28 @@ bool NotebookSelector::onKeyPress(GdkEventKey *event)
 				onRename();
 		}
 		return true;
+	}
+	//Selection independent presses. All use control mask
+	else if (event->state & GDK_CONTROL_MASK)
+	{
+		if (event->state & GDK_SHIFT_MASK)
+		{
+			//Ctrl+Shift+N to create new stack
+			if (event->keyval == GDK_KEY_N)
+			{
+				onStackCreate();
+				return true;
+			}
+		}
+		else
+		{
+			//Ctrl+N to create new notebook (no stack)
+			if (event->keyval == GDK_KEY_n)
+			{
+				onNotebookCreateWithoutStack();
+				return true;
+			}
+		}
 	}
 
 	return false;

@@ -33,6 +33,11 @@ sigc::signal<void, Gtk::TreeModel::Path&>& NotebookTreeStore::signal_change_stac
 	return stackChangeSignal;
 }
 
+sigc::signal<bool, const Guid&, const Guid&>& NotebookTreeStore::signal_note_change_notebook()
+{
+	return noteChangeNotebookSignal;
+}
+
 bool NotebookTreeStore::row_draggable_vfunc(const Gtk::TreeModel::Path& path) const
 {
 	NotebookTreeStore *unconst = (NotebookTreeStore*)this;
@@ -51,14 +56,31 @@ bool NotebookTreeStore::row_draggable_vfunc(const Gtk::TreeModel::Path& path) co
 	return Gtk::TreeStore::row_draggable_vfunc(path);
 }
 
-int NotebookTreeStore::getPathDepth(Gtk::TreeModel::Path path)
+bool NotebookTreeStore::row_drop_possible_vfunc(const Gtk::TreeModel::Path& path, const Gtk::SelectionData& data) const
 {
-	int depth = 0;
+	/*None of this works as intended. Yay. I'll figure it out in a later version
+	//External drag. Do not allow drops on stacks
+	if (data.get_target() == "STRING")
+	{
+		Gtk::TreeModel::iterator it = ((NotebookTreeStore*)this)->get_iter(path);
 
-	while (path.up())
-		depth++;
+		if (it)
+		{
+			Guid guid;
+			it->get_value(GUID_COL, guid);
 
-	return depth;
+			if (guid == STACK_GUID)
+				return false;
+			else
+				return true;
+		}
+		else
+			return false;
+				
+	}*/
+	
+	//Just return default for internal drags
+	return Gtk::TreeStore::row_drop_possible_vfunc(path, data);
 }
 
 bool NotebookTreeStore::drag_data_get_vfunc(const TreeModel::Path& src, Gtk::SelectionData& selectionData) const
@@ -69,6 +91,33 @@ bool NotebookTreeStore::drag_data_get_vfunc(const TreeModel::Path& src, Gtk::Sel
 }
 
 bool NotebookTreeStore::drag_data_received_vfunc(const Gtk::TreeModel::Path& dest, const Gtk::SelectionData& selectionData)
+{
+	//Internal row drag
+	if (selectionData.get_target() == "GTK_TREE_MODEL_ROW")
+		return dragRowDataReceived(dest, selectionData);
+	//External string drag
+	else if (selectionData.get_target() == "STRING")
+		return dragStringDataReceived(dest, selectionData);
+
+	return false;
+}
+
+int NotebookTreeStore::getPathDepth(Gtk::TreeModel::Path path)
+{
+	int depth = 0;
+
+	while (path.up())
+		depth++;
+
+	return depth;
+}
+
+bool NotebookTreeStore::srcBefore(const TreeModel::Path& path)
+{
+	return srcPath < path;
+}
+
+bool NotebookTreeStore::dragRowDataReceived(const Gtk::TreeModel::Path& dest, const Gtk::SelectionData& selectionData)
 {
 	NotebookTreeStore *unconst = (NotebookTreeStore*)this;
 
@@ -142,7 +191,23 @@ bool NotebookTreeStore::drag_data_received_vfunc(const Gtk::TreeModel::Path& des
 	return ret;
 }
 
-bool NotebookTreeStore::srcBefore(const TreeModel::Path& path)
+bool NotebookTreeStore::dragStringDataReceived(const Gtk::TreeModel::Path& dest, const Gtk::SelectionData& selectionData)
 {
-	return srcPath < path;
+	Guid noteGuid = selectionData.get_text();
+
+	Guid notebookGuid;
+	Gtk::TreeModel::iterator it = ((NotebookTreeStore*)this)->get_iter(dest);
+
+	if (it)
+	{
+		it->get_value(GUID_COL, notebookGuid);
+
+		//Can't add note directly to stack.
+		if (notebookGuid == STACK_GUID)
+			return false;
+
+		return noteChangeNotebookSignal.emit(noteGuid, notebookGuid);
+	}
+	else
+		return false;
 }

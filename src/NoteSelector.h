@@ -77,6 +77,9 @@ private:
 	//Responses to context menu items
 	void onDeleteNote();
 	void onCreateNote();
+
+	//Key listener
+	bool onKeyPress(GdkEventKey *event);
 };
 
 #endif

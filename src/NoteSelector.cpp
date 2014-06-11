@@ -5,6 +5,7 @@
  */
 
 #include "NoteSelector.h"
+#include "NoteListStore.h"
 
 using namespace std;
 using namespace evernote::edam;
@@ -18,19 +19,27 @@ NoteSelector::NoteSelector(BaseObjectType *cObj, const Glib::RefPtr<Gtk::Builder
 	set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
 
 	//Using a list store this time, no "child elements"
-	treeModel = Gtk::ListStore::create(colModel);
+	treeModel = NoteListStore::create(colModel);
 	view.set_model(treeModel);
 	
 	//Trigger with single click
 	view.set_activate_on_single_click(true);
 
-	view.set_reorderable(true);
+	view.enable_model_drag_source();
+
+	//Drag source. For strings. Data get functions defined in NoteListStore
+	vector<Gtk::TargetEntry> dragTargets;
+	dragTargets.push_back(Gtk::TargetEntry("STRING", Gtk::TARGET_SAME_APP|Gtk::TARGET_OTHER_WIDGET));
+	view.enable_model_drag_source(dragTargets);
 
 	//Listen for clicks
 	view.signal_button_press_event().connect(sigc::mem_fun(*this, &NoteSelector::onButtonPressEvent), false);
 	
 	//Connect row selection
 	view.signal_row_activated().connect(sigc::mem_fun(*this, &NoteSelector::onRowSelected));
+
+	//Connect key press listener
+	view.signal_key_press_event().connect(sigc::mem_fun(*this, &NoteSelector::onKeyPress), false);
 
 	//Show note column
 	view.append_column("Note", colModel.nameCol);
@@ -185,4 +194,33 @@ void NoteSelector::onCreateNote()
 
 		//Do something
 	}
+}
+
+bool NoteSelector::onKeyPress(GdkEventKey *event)
+{
+	//Selection dependent options: Note creation (possibly renaming as well in future version)
+	if (event->keyval == GDK_KEY_Delete)
+	{
+		vector<Gtk::TreeModel::Path> selected = view.get_selection()->get_selected_rows();
+
+		if (selected.size() == 1)
+		{
+			clickPath = selected[0];
+
+			onDeleteNote();
+		}
+
+		return true;
+	}
+	//Non-selection dependent options. Requires control mask
+	else if (event->state & GDK_CONTROL_MASK)
+	{
+		if (event->keyval == GDK_KEY_n)
+		{
+			onCreateNote();
+			return true;
+		}
+	}
+
+	return false;
 }
