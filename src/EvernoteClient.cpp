@@ -86,12 +86,12 @@ void EvernoteClient::getSyncChunks(vector<SyncChunk>& cBuffer, bool fullSync)
 
 	//Filters. These are currently all the client needs
 	filter.__isset.includeNotes = true;
-	//filter.__isset.includeNoteResources = true;	//Do not include in this version
+	filter.__isset.includeNoteResources = true;		//Now includes resources
 	filter.__isset.includeNotebooks = true;
 	filter.__isset.includeExpunged = !fullSync;		//Only need expunged on incremental sync
 
 	filter.includeNotes = true;
-	//filter.includeNoteResources = true;
+	filter.includeNoteResources = true;
 	filter.includeNotebooks = true;
 	filter.includeExpunged = !fullSync;
 
@@ -116,6 +116,22 @@ void EvernoteClient::getSyncChunks(vector<SyncChunk>& cBuffer, bool fullSync)
 
 	//Buffer final chunk
 	cBuffer.push_back(chunky);
+
+	/*
+	for (vector<SyncChunk>::iterator it = cBuffer.begin(); it != cBuffer.end(); it++)
+	{
+		chunky = *it;
+		//TODO REMOVE: Show resources in sync chunk:
+		for (size_t i = 0; i < chunky.notes.size(); i++)
+		{
+			for (size_t j = 0; j < chunky.notes[i].resources.size(); j++)
+			{
+				Resource r = chunky.notes[i].resources[j];
+				cout << "Note title = " << chunky.notes[i].title << ", guid = " << r.noteGuid << " and resource Guid = " << r.guid << ", is data set = " << r.__isset.data << ", is data hash set = " << r.data.__isset.bodyHash << ", and is data body set = " << r.data.__isset.body << endl;
+			}
+		}
+	}
+	*/
 }
 
 void EvernoteClient::resolveServerChanges(const vector<SyncChunk>& cBuffer, bool fullSync)
@@ -228,6 +244,29 @@ void EvernoteClient::processChunk(const SyncChunk& chunk, bool fullSync)
 			//Add to the database
 			db->addNote(sNote);
 		}
+
+
+		//Process note resources
+		for (vector<Resource>::iterator it = sNote.resources.begin(); it != sNote.resources.end(); it++)
+		{
+			Resource r = *it;
+			Resource lr;
+			
+			if (!db->getResourceByGuid(lr, r.guid, false))
+			{
+				//Get the resource's data and attributse
+				nStore->getResource(r, devToken, r.guid, true, false, true, false);
+
+				//Add resource to database
+				db->addResource(r);
+			}
+			//Dirty or not, just update the local resource if the server's is newer
+			else if (r.updateSequenceNum > lr.updateSequenceNum)
+			{
+				db->updateResource(r);
+				db->unflagDirty(r);
+			}
+		}
 	}
 
 
@@ -319,6 +358,8 @@ bool EvernoteClient::sendClientChanges()
 				needResync = true;
 			}
 		}
+
+		//TODO: Send note resources!
 	}
 
 

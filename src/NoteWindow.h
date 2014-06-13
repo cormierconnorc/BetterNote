@@ -55,9 +55,6 @@ private:
 	void onNoteSelected();
 	void onNoteDeleted(const evernote::edam::Note& note);
 	evernote::edam::Note createNote();
-
-	//Override default handler to capture tab key
-	virtual bool on_key_press_event(GdkEventKey *event);
 	
 	//Listen for key press events
 	bool onKeyPress(GdkEventKey *event);

@@ -24,12 +24,15 @@ NoteWindow::NoteWindow(BaseObjectType* cObj, const Glib::RefPtr<Gtk::Builder>& b
 	
 	loadObjs(builder);
 
+	//Give the NoteView a database connection so it can manage its own content
+	this->note->setDatabase(db);
+
 	//Temporary while service down
 	refresh();
 
 	//Listen for escape key press
 	this->add_events(Gdk::KEY_PRESS_MASK);
-	this->signal_key_press_event().connect(sigc::mem_fun(*this, &NoteWindow::onKeyPress));
+	this->signal_key_press_event().connect(sigc::mem_fun(*this, &NoteWindow::onKeyPress), false);
 }
 
 NoteWindow::~NoteWindow()
@@ -103,18 +106,8 @@ void NoteWindow::showCurNotes()
 
 void NoteWindow::showCurNote()
 {
-	if (noteSel->getActiveNote() == "")
-	{
-		note->showHtml("No note selected</br>This buffer can be used for text you don't wish to save.");
-		return;
-	}
-
-	//Get the note
-	Note note;
-	db->getNoteByGuid(note, noteSel->getActiveNote());
-
-	//Give it to the buffer
-	this->note->showNote(note);
+	//Give it to the NoteView
+	this->note->showNote(noteSel->getActiveNote());
 }
 
 /*
@@ -133,21 +126,6 @@ void NoteWindow::onNoteSelected()
 {
 	//Show the current note
 	showCurNote();
-}
-
-void NoteWindow::updateVisibleNote()
-{
-	const Note& n = note->getNote();
-	
-	db->updateNote(n);
-	db->flagDirty(n);
-
-	/*Only relevant for direct update
-	//Get the note associated with the metadata in newNote
-	client->getNote(newNote, newNote.guid);
-	
-	note->showNote(newNote);
-	*/
 }
 
 void NoteWindow::onNotebookRename(const vector<Notebook>& changed)
@@ -299,7 +277,8 @@ Note NoteWindow::createNote()
 	return newNote;
 }
 
-bool NoteWindow::on_key_press_event(GdkEventKey *event)
+
+bool NoteWindow::onKeyPress(GdkEventKey *event)
 {
 	//Force tab behavior by executing the appropriate command in the note window
 	//But only if the note is in focus
@@ -314,33 +293,12 @@ bool NoteWindow::on_key_press_event(GdkEventKey *event)
 		client->synchronize();
 		return true;
 	}
-
-	return Gtk::Window::on_key_press_event(event);
-}
-
-bool NoteWindow::onKeyPress(GdkEventKey *event)
-{	
-	//Actions to take if control modifier has been pressed
-	if (event->state & GDK_CONTROL_MASK)
+	//Override for F5
+	else if (event->keyval == GDK_KEY_F5)
 	{
-		//Ctrl-S: Take save action
-		switch (event->keyval)
-		{
-			case GDK_KEY_s:
-				updateVisibleNote();
-				return true;
-		}
+		this->refresh();
+		return true;
 	}
-	//No control
-	else
-	{
-		switch (event->keyval)
-		{
-			case GDK_KEY_F5:
-				refresh();
-				return true;
-		}
-	}
-	
+
 	return false;
 }

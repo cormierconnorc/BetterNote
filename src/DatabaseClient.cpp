@@ -310,7 +310,7 @@ bool DatabaseClient::addNote(const Note& note)
 bool DatabaseClient::updateNote(const Note& note)
 {
 	//Bind note to statement
-	bindNote(sUpdateNote, note);
+	bindNote(sUpdateNote, note, isNoteDirty(note));
 
 	//Bind guid of note
 	sqlite3_bind_text(sUpdateNote, 8, note.guid.c_str(), -1, SQLITE_STATIC);
@@ -355,6 +355,123 @@ bool DatabaseClient::purgeDeletedNotes()
 	bool ret = execSyncNoRes(sPurgeDeletedNotes);
 	sReset(sPurgeDeletedNotes);
 	return ret;
+}
+
+bool DatabaseClient::getResourcesInNote(vector<Resource>& ret, const Note& note, bool withData)
+{
+	//Select appropriate prepared statement
+	sqlite3_stmt *s = (withData ? sGetResourcesInNote : sGetResourcesInNoteNoData);
+
+	//Bind note guid
+	sqlite3_bind_text(s, 1, note.guid.c_str(), -1, SQLITE_STATIC);
+
+	fetchResources(ret, s, true);
+
+	sReset(s);
+
+	return true;
+}
+
+bool DatabaseClient::removeResourcesInNote(const Note& note)
+{
+	sqlite3_stmt *s = sRemoveResourcesInNote;
+
+	sqlite3_bind_text(s, 1, note.guid.c_str(), -1, SQLITE_STATIC);
+
+	bool ret = execSyncNoRes(s);
+
+	sReset(s);
+
+	return ret;
+}
+
+bool DatabaseClient::getResourceByGuid(Resource& ret, const Guid& guid, bool withData)
+{
+	//Select appropriate prepared statement
+	sqlite3_stmt *s = (withData ? sGetResourceByGuid : sGetResourceByGuidNoData);
+
+	//Bind guid
+	sqlite3_bind_text(s, 1, guid.c_str(), -1, SQLITE_STATIC);
+
+	vector<Resource> retVec;
+	
+	fetchResources(retVec, s, true);
+
+	sReset(s);
+
+	if (retVec.size() > 0)
+	{
+		ret = retVec[0];
+		return true;
+	}
+
+	return false;
+}
+
+bool DatabaseClient::addResource(const Resource& res)
+{
+	bindResource(sAddResource, res);
+
+	bool ret = execSyncNoRes(sAddResource);
+
+	sReset(sAddResource);
+
+	return ret;
+}
+
+bool DatabaseClient::updateResource(const evernote::edam::Resource& res)
+{
+	bindResource(sUpdateResource, res, isResourceDirty(res));
+
+	//Bind guid
+	sqlite3_bind_text(sUpdateResource, 9, res.guid.c_str(), -1, SQLITE_STATIC);
+
+	bool ret = execSyncNoRes(sUpdateResource);
+
+	sReset(sUpdateResource);
+
+	return ret;
+}
+
+bool DatabaseClient::removeResource(const Resource& res)
+{
+	sqlite3_stmt *s = sRemoveResource;
+
+	sqlite3_bind_text(s, 1, res.guid.c_str(), -1, SQLITE_STATIC);
+
+	bool ret = execSyncNoRes(s);
+
+	sReset(s);
+
+	return ret;
+}
+
+bool DatabaseClient::getDirtyResourcesInNote(vector<Resource>& ret, const Note& note)
+{
+	sqlite3_stmt *s = sGetDirtyResourcesInNote;
+
+	//Bind note guid
+	sqlite3_bind_text(s, 1, note.guid.c_str(), -1, SQLITE_STATIC);
+
+	fetchResources(ret, s, true);
+
+	sReset(s);
+
+	return true;
+}
+
+bool DatabaseClient::getCleanResourcesInNoteNoData(vector<Resource>& ret, const Note& note)
+{
+	sqlite3_stmt *s = sGetCleanResourcesInNoteNoData;
+
+	//Bind note guid
+	sqlite3_bind_text(s, 1, note.guid.c_str(), -1, SQLITE_STATIC);
+
+	fetchResources(ret, s, false);
+
+	sReset(s);
+
+	return true;
 }
 
 bool DatabaseClient::getDirtyNotebooks(vector<Notebook>& ret)
@@ -425,6 +542,31 @@ bool DatabaseClient::isNoteDirty(const Note& note)
 	}
 }
 
+bool DatabaseClient::isResourceDirty(const Resource& res)
+{
+	//Bind the notebook's guid to the appropriate statement
+	sqlite3_bind_text(sIsResourceDirty, 1, res.guid.c_str(), -1, SQLITE_STATIC);
+
+	int rc;
+	
+	if ((rc = sqlite3_step(sIsResourceDirty)) == SQLITE_ROW)
+	{
+		bool dirty = (bool)sqlite3_column_int(sIsResourceDirty, 0);
+
+		sReset(sIsResourceDirty);
+
+		return dirty;
+	}
+	else
+	{
+		sReset(sIsResourceDirty);
+		
+		ostringstream oss;
+		oss << "Could not get note dirty flag. SQLite returned " << rc;		
+		throw DatabaseException(oss.str());
+	}
+}
+
 bool DatabaseClient::setDirty(const Notebook& notebook, bool dirty)
 {
 	//Bind dirty
@@ -459,6 +601,23 @@ bool DatabaseClient::setDirty(const Note& note, bool dirty)
 	return ret;
 }
 
+bool DatabaseClient::setDirty(const Resource& res, bool dirty)
+{
+	//Bind dirty
+	sqlite3_bind_int(sSetResourceDirty, 1, dirty);
+	
+	//Bind guid
+	sqlite3_bind_text(sSetResourceDirty, 2, res.guid.c_str(), -1, SQLITE_STATIC);
+
+	//Execute without result
+	bool ret = execSyncNoRes(sSetResourceDirty);
+
+	//Reset statement
+	sReset(sSetResourceDirty);
+	
+	return ret;
+}
+
 bool DatabaseClient::flagDirty(const Notebook& notebook)
 {
 	return setDirty(notebook, true);
@@ -467,6 +626,11 @@ bool DatabaseClient::flagDirty(const Notebook& notebook)
 bool DatabaseClient::flagDirty(const Note& note)
 {
 	return setDirty(note, true);
+}
+
+bool DatabaseClient::flagDirty(const Resource& res)
+{
+	return setDirty(res, true);
 }
 
 bool DatabaseClient::flagNotesInNotebookDirty(const Notebook& notebook)
@@ -491,6 +655,11 @@ bool DatabaseClient::unflagDirty(const Notebook& notebook)
 bool DatabaseClient::unflagDirty(const Note& note)
 {
 	return setDirty(note, false);
+}
+
+bool DatabaseClient::unflagDirty(const Resource& res)
+{
+	return setDirty(res, false);
 }
 
 bool DatabaseClient::execSyncNoRes(const string& stat)
@@ -536,13 +705,17 @@ bool DatabaseClient::validateTables()
 	string syncInfoSchema = "CREATE TABLE syncInfo(syncTime integer, lastUpdateCount integer)";
 	string noteSchema = "CREATE TABLE notes(guid text primary key, title text, content text, deleted integer, usn integer, notebookGuid text, dirty integer)";
 	string notebookSchema = "CREATE TABLE notebooks(guid text primary key, name text, usn integer, isDefault integer, stack text, dirty integer)";
+	string resourceSchema = "CREATE TABLE resources(guid text primary key, noteGuid text, bodyHash text, body text, mime text, fileName text, usn integer, dirty integer)";
 	
 	if (sqlite3_prepare_v2(db, "select sql from sqlite_master where type='table' order by name;", -1, &schemaStatement, 0) != SQLITE_OK)
 		return false;
 
 	//If statement prepared successfully, start stepping
 	
-	bool hasSyncInfoTable = false, hasNoteTable = false, hasNotebookTable = false;
+	bool hasSyncInfoTable = false,
+			hasNoteTable = false,
+			hasNotebookTable = false,
+			hasResourceTable = false;
 			
 	int result;
 	int columns = sqlite3_column_count(schemaStatement);
@@ -561,6 +734,9 @@ bool DatabaseClient::validateTables()
 
 			if (s == notebookSchema)
 				hasNotebookTable = true;
+
+			if (s == resourceSchema)
+				hasResourceTable = true;
 		}
 	}
 
@@ -594,6 +770,14 @@ bool DatabaseClient::validateTables()
 	else
 		cout << "Found notebook table." << endl;
 
+	if (!hasResourceTable)
+	{
+		cout << "No resource table found! Creating one now" << endl;
+		execSyncNoRes(resourceSchema);
+	}
+	else
+		cout << "Found resource table." << endl;
+
 	return true;
 }
 
@@ -619,12 +803,30 @@ void DatabaseClient::prepareStatements()
 	sqlite3_prepare_v2(db, "delete from notes where guid=?", -1, &sRemoveNote, 0);
 	sqlite3_prepare_v2(db, "update notes set deleted=? where guid=?", -1, &sDeleteNote, 0);
 	sqlite3_prepare_v2(db, "delete from notes where deleted!=-1", -1, &sPurgeDeletedNotes, 0);
+	//TODO write and test
+	sqlite3_prepare_v2(db, "select * from resources where noteGuid=?", -1, &sGetResourcesInNote, 0);
+	sqlite3_prepare_v2(db, "select guid,noteGuid,bodyHash,mime,fileName,usn from resources where noteGuid=?", -1, &sGetResourcesInNoteNoData, 0);
+	sqlite3_prepare_v2(db, "delete from resources where noteGuid=?", -1, &sRemoveResourcesInNote, 0);
+	sqlite3_prepare_v2(db, "select * from resources where guid=?", -1, &sGetResourceByGuid, 0);
+	sqlite3_prepare_v2(db, "select guid,noteGuid,bodyHash,mime,fileName,usn from resources where guid=?", -1, &sGetResourceByGuidNoData, 0);
+	sqlite3_prepare_v2(db, "insert into resources values (?, ?, ?, ?, ?, ?, ?, ?)", -1, &sAddResource, 0);
+	sqlite3_prepare_v2(db, "update resources set guid=?,noteGuid=?,bodyHash=?,body=?,mime=?,fileName=?,usn=?,dirty=? where guid=?", -1, &sUpdateResource, 0);
+	sqlite3_prepare_v2(db, "delete from resources where guid=?", -1, &sRemoveResource, 0);
+	sqlite3_prepare_v2(db, "select * from resources where dirty!=0", -1, &sGetDirtyResourcesInNote, 0);
+	sqlite3_prepare_v2(db, "select guid,noteGuid,bodyHash,mime,fileName,usn from resources where dirty=0", -1, &sGetCleanResourcesInNoteNoData, 0);
+	//END TODO
 	sqlite3_prepare_v2(db, "select * from notebooks where dirty!=0", -1, &sGetDirtyNotebooks, 0);
 	sqlite3_prepare_v2(db, "select * from notes where dirty!=0", -1, &sGetDirtyNotes, 0);
 	sqlite3_prepare_v2(db, "select dirty from notebooks where guid=?", -1, &sIsNotebookDirty, 0);
 	sqlite3_prepare_v2(db, "select dirty from notes where guid=?", -1, &sIsNoteDirty, 0);
+	//TODO
+	sqlite3_prepare_v2(db, "select dirty from resources where guid=?", -1, &sIsResourceDirty, 0);
+	//END TODO
 	sqlite3_prepare_v2(db, "update notebooks set dirty=? where guid=?", -1, &sSetNotebookDirty, 0);
 	sqlite3_prepare_v2(db, "update notes set dirty=? where guid=?", -1, &sSetNoteDirty, 0);
+	//TODO
+	sqlite3_prepare_v2(db, "update resources set dirty=? where guid=?", -1, &sSetResourceDirty, 0);
+	//END TODO
 	sqlite3_prepare_v2(db, "update notes set dirty=1 where notebookGuid=?", -1, &sFlagNotesInNotebookDirty, 0);
 }
 
@@ -650,12 +852,24 @@ void DatabaseClient::finalizeStatements()
 	sqlite3_finalize(sRemoveNote);
 	sqlite3_finalize(sDeleteNote);
 	sqlite3_finalize(sPurgeDeletedNotes);
+	sqlite3_finalize(sGetResourcesInNote);
+	sqlite3_finalize(sGetResourcesInNoteNoData);
+	sqlite3_finalize(sRemoveResourcesInNote);
+	sqlite3_finalize(sGetResourceByGuid);
+	sqlite3_finalize(sGetResourceByGuidNoData);
+	sqlite3_finalize(sAddResource);
+	sqlite3_finalize(sUpdateResource);
+	sqlite3_finalize(sRemoveResource);
+	sqlite3_finalize(sGetDirtyResourcesInNote);
+	sqlite3_finalize(sGetCleanResourcesInNoteNoData);
 	sqlite3_finalize(sGetDirtyNotebooks);
 	sqlite3_finalize(sGetDirtyNotes);
 	sqlite3_finalize(sIsNotebookDirty);
 	sqlite3_finalize(sIsNoteDirty);
+	sqlite3_finalize(sIsResourceDirty);
 	sqlite3_finalize(sSetNotebookDirty);
 	sqlite3_finalize(sSetNoteDirty);
+	sqlite3_finalize(sSetResourceDirty);
 	sqlite3_finalize(sFlagNotesInNotebookDirty);
 }
 
@@ -688,6 +902,24 @@ void DatabaseClient::prepareNote(Note& note)
 	note.__isset.deleted = true;
 	note.__isset.updateSequenceNum = true;
 	note.__isset.notebookGuid = true;
+}
+
+void DatabaseClient::prepareResource(Resource& res, bool withData)
+{
+	res.__isset = _Resource__isset();
+	res.data.__isset = _Data__isset();
+	res.attributes.__isset = _ResourceAttributes__isset();
+
+	//Set fields in Database to true
+	res.__isset.guid = true;
+	res.__isset.noteGuid = true;
+	res.__isset.data = true;
+	res.__isset.mime = true;
+	res.__isset.attributes = true;
+	res.__isset.updateSequenceNum = true;
+	res.data.__isset.bodyHash = true;
+	res.data.__isset.body = withData;
+	res.attributes.__isset.fileName = true;
 }
 
 void DatabaseClient::fetchNotebooks(vector<Notebook>& ret, sqlite3_stmt *readyStat)
@@ -749,6 +981,40 @@ void DatabaseClient::fetchNotes(vector<Note>& ret, sqlite3_stmt *readyStat)
 	}
 }
 
+void DatabaseClient::fetchResources(vector<Resource>& ret, sqlite3_stmt *readyStat, bool withData)
+{
+	//Empty vector
+	ret.clear();
+
+	while (sqlite3_step(readyStat) == SQLITE_ROW)
+	{
+		Resource r;
+		prepareResource(r, withData);
+
+		int c = 0;
+
+		r.guid = (char *)sqlite3_column_text(readyStat, c++);
+		r.noteGuid = (char *)sqlite3_column_text(readyStat, c++);
+		r.data.bodyHash = (char *)sqlite3_column_text(readyStat, c++);
+
+		if (withData)
+			r.data.body = (char *)sqlite3_column_text(readyStat, c++);
+
+		r.mime = (char *)sqlite3_column_text(readyStat, c++);
+		r.attributes.fileName = (char *)sqlite3_column_text(readyStat, c++);
+
+		if (r.attributes.fileName == "")
+			r.attributes.__isset.fileName = false;
+
+		r.updateSequenceNum = sqlite3_column_int(readyStat, c++);
+
+		if (r.updateSequenceNum < 0)
+			r.__isset.updateSequenceNum = false;
+		
+		ret.push_back(r);
+	}
+}
+
 void DatabaseClient::bindNotebook(sqlite3_stmt *stat, const Notebook& notebook, bool dirty)
 {
 	//Bind each field of the notebook to the statement
@@ -770,6 +1036,19 @@ void DatabaseClient::bindNote(sqlite3_stmt *stat, const Note& note, bool dirty)
 	sqlite3_bind_int(stat, 5, (note.__isset.updateSequenceNum ? note.updateSequenceNum : -1));
 	sqlite3_bind_text(stat, 6, note.notebookGuid.c_str(), -1, SQLITE_STATIC);
 	sqlite3_bind_int(stat, 7, dirty);
+}
+
+void DatabaseClient::bindResource(sqlite3_stmt *stat, const Resource& res, bool dirty)
+{
+	//Bind each field of resource to statement
+	sqlite3_bind_text(stat, 1, res.guid.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stat, 2, res.noteGuid.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stat, 3, res.data.bodyHash.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stat, 4, res.data.body.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stat, 5, res.mime.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stat, 6, res.attributes.fileName.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_int(stat, 7, (res.__isset.updateSequenceNum ? res.updateSequenceNum : -1));
+	sqlite3_bind_int(stat, 8, dirty);
 }
 
 /*

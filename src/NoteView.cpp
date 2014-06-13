@@ -5,18 +5,21 @@
  */
 
 #include "NoteView.h"
-//#include <fstream>
+#include <iostream>
+
+#define BUF_FLAG "I_AM_A_BUFFER_AMA"
 
 using namespace std;
 using namespace evernote::edam;
 
-NoteView::NoteView(BaseObjectType* cObj, const Glib::RefPtr<Gtk::Builder>& builder) : Gtk::Box(cObj)
+NoteView::NoteView(BaseObjectType* cObj, const Glib::RefPtr<Gtk::Builder>& builder) : Gtk::Box(cObj), db(NULL)
 {
+	//Base url for relative purposes
+	baseUrl = Glib::get_current_dir();
+	
 	loadWidgets(builder);
 
 	showWebView();
-	
-	//TODO decide primary window or box for key listener.
 	
 	//Set the box to listen for key input
 	this->signal_key_press_event().connect(sigc::mem_fun(*this, &NoteView::onKeyPress));
@@ -25,6 +28,110 @@ NoteView::NoteView(BaseObjectType* cObj, const Glib::RefPtr<Gtk::Builder>& build
 NoteView::~NoteView()
 {
 	gtk_widget_destroy(GTK_WIDGET(view));
+}
+
+void NoteView::setDatabase(DatabaseClient *db)
+{
+	this->db = db;
+}
+
+void NoteView::showEnml(string enml)
+{
+	this->toHtml(enml);
+	
+	webkit_web_view_load_string(view, enml.c_str(), NULL, NULL, "file://");
+}
+
+string NoteView::getEnml()
+{	
+	//Get data from source
+	//Code from Ivaldi: http://stackoverflow.com/questions/19763133/how-can-i-get-the-source-code-which-has-been-rendered-by-webkitgtk
+	WebKitDOMDocument *doc = webkit_web_view_get_dom_document(view);
+	WebKitDOMElement *root = webkit_dom_document_query_selector(doc, ":root", NULL);
+	const gchar* content = webkit_dom_html_element_get_outer_html(WEBKIT_DOM_HTML_ELEMENT(root));
+
+	string sContent;
+	
+	if (!content)
+		sContent = "";
+	else
+		sContent = content;
+
+	//Convert content to enml
+	toEnml(sContent);
+	
+	return sContent;
+}
+
+void NoteView::showNote(const Guid& noteGuid)
+{
+	if (db->getNoteByGuid(note, noteGuid))
+	{
+		this->noteTitle->set_text(note.title);
+		this->showEnml(note.content);
+	}
+	//If the note couldn't be retrieved, set up a buffer instead.
+	else
+	{
+		note.guid = BUF_FLAG;
+
+		this->noteTitle->set_text("Buffer");
+		this->showEnml("This buffer is for notes you don't want to save.<br/>Select or create a note if you wish to save your work.");
+		//Image path example
+		//this->showEnml("<img src=\"" + baseUrl + "/res/HavasuFalls.jpg\"/>");
+	}
+}
+
+const Note& NoteView::getNote()
+{
+	return note;
+}
+
+void NoteView::updateNote()
+{
+	//Update note content and title
+	this->note.content = getEnml();
+	this->note.title = noteTitle->get_text();
+}
+
+void NoteView::saveNote()
+{
+	//Update the note
+	updateNote();
+
+	//Now place the updated content in the database if it is an actual note
+	if (note.guid != BUF_FLAG)
+	{
+		db->updateNote(note);
+		db->flagDirty(note);
+	}
+}
+
+bool NoteView::execDom(const std::string& command, const std::string& commandVal)
+{
+	WebKitDOMDocument *domDoc = webkit_web_view_get_dom_document(view);
+	
+	return webkit_dom_document_exec_command(domDoc, command.c_str(), false, commandVal.c_str());
+}
+
+bool NoteView::queryDomComState(const std::string& command)
+{
+	WebKitDOMDocument *domDoc = webkit_web_view_get_dom_document(view);
+
+	return webkit_dom_document_query_command_state(domDoc, command.c_str());
+}
+
+bool NoteView::isNoteFocus()
+{
+	return gtk_widget_is_focus(GTK_WIDGET(view));
+}
+
+void NoteView::tabAction()
+{
+	if (queryDomComState("insertUnorderedList") || queryDomComState("insertOrderedList"))
+		this->execDom("indent");
+	else
+		this->execDom("insertHTML", "&nbsp;&nbsp;&nbsp;&nbsp;");
 }
 
 void NoteView::loadWidgets(const Glib::RefPtr<Gtk::Builder>& builder)
@@ -64,28 +171,59 @@ void NoteView::showWebView()
 	gtk_container_add(GTK_CONTAINER(primaryWindow->gobj()), GTK_WIDGET(view));
 }
 
-void NoteView::showHtml(const string& html)
+void NoteView::toHtml(string& ret)
 {
-	webkit_web_view_load_string(view, html.c_str(), NULL, NULL, NULL);
+	//Remove everything before and after <en-note> tags
+	size_t bodyStart = ret.find("<en-note");
+	size_t bodyEnd = ret.find("</en-note>");
+
+	//If not a complete note, just start at the beginning
+	if (bodyStart == string::npos)
+		bodyStart = 0;
+	//If a valid note, seek the end of the <en-note tag
+	else
+		bodyStart = ret.find(">", bodyStart) + 1;
+
+	//If not a complete note, just end at the end
+	if (bodyEnd == string::npos)
+		bodyEnd = ret.length();
+
+	size_t len = bodyEnd - bodyStart;
+
+	ret = ret.substr(bodyStart, len);
+
+	//Now add html start and end tags
+	ret = "<html><body>" + ret + "</body></html>";
 }
 
-string NoteView::getHtml()
-{	
-	//Get data from source
-	//Code from Ivaldi: http://stackoverflow.com/questions/19763133/how-can-i-get-the-source-code-which-has-been-rendered-by-webkitgtk
-	WebKitDOMDocument *doc = webkit_web_view_get_dom_document(view);
-	WebKitDOMElement *root = webkit_dom_document_query_selector(doc, ":root", NULL);
-	const gchar* content = webkit_dom_html_element_get_outer_html(WEBKIT_DOM_HTML_ELEMENT(root));
+void NoteView::toEnml(string& ret)
+{
+	size_t start = ret.find("<body>") + string("<body>").length(),
+			len = ret.find("</body>") - start;
 
-	//Alternate: use javascript to put html into title and then get directly.
-	//No dom document generation
-	//webkit_web_view_execute_script(view, "document.title=document.documentElement.innerHTML");
-	//const gchar *content = webkit_web_view_get_title(view);
+	//Cut the string down only to the body of the note, which is all that matters here.
+	ret = ret.substr(start, len);
 
-	if (!content)
-		return "";
+	//Add in the note formatting
+	ret = NOTE_HEAD + "<en-note>" + ret + "</en-note>";
 
-	return cleanHtml(content);
+	//Close the tags that webkit doesn't like to close.
+	insertTagClose(ret, "<p");
+	insertTagClose(ret, "<hr");
+	insertTagClose(ret, "<br");
+}
+
+void NoteView::insertTagClose(string& ret, const string& tagOpen, const string& insert)
+{
+	size_t lastLoc = 0;
+
+	while ((lastLoc = ret.find(tagOpen, lastLoc)) != string::npos)
+	{
+		lastLoc = ret.find(">", lastLoc);
+
+		if (ret.substr(lastLoc - insert.length(), insert.length()) != insert)
+			ret.insert(lastLoc, insert);
+	}
 }
 
 void NoteView::stripTag(string& ret, const string& remove)
@@ -103,130 +241,6 @@ void NoteView::stripTag(string& ret, size_t tagPos)
 	size_t end = ret.find(">", tagPos);
 
 	ret.erase(tagPos, end - tagPos + 1);	
-}
-
-string NoteView::cleanHtml(string ret)
-{
-	size_t start = ret.find("<body>") + string("<body>").length(), len = ret.find("</body>") - start;
-
-	//Cut the string down only to the body of the note, which is all that matters here.
-	ret = ret.substr(start, len);
-
-	size_t lPos;
-
-	//Clear out additional </en-note> tags occuring before final one
-	while ((lPos = ret.find("</en-note")) != ret.rfind("</en-note"))
-		stripTag(ret, lPos);
-	//Clear out additional <en-note> tags occuring after first one
-	while (ret.find("<en-note") != (lPos = ret.rfind("<en-note")))
-		stripTag(ret, lPos);
-	
-	//Add opening evernote tag if not present
-	if ((lPos = ret.find("<en-note")) == string::npos)
-		ret = "<en-note>" + ret;
-	//If it doesn't start with the tag
-	else if (lPos != 0)
-	{
-		cout << "Stripping start" << endl;
-		stripTag(ret, "<en-note");
-		ret = "<en-note>" + ret;
-	}
-		
-	//Add ending tag if not present
-	if ((lPos = ret.find("</en-note")) == string::npos)
-		ret = ret + "</en-note>";
-	else if (ret.find(">", lPos) != ret.length() - 1)
-	{
-		stripTag(ret, "</en-note");
-		ret = ret + "</en-note>";
-	}
-	
-	
-	//Add in Evernote XML doctype statement
-	ret = NOTE_HEAD + ret;
-
-	/***Replace bad tags***/
-	size_t lastLoc = 0;
-	
-	//Replace <p> with <p/> and <hr> with <hr/>
-	while ((lastLoc = ret.find("<p>", lastLoc)) != string::npos)
-		ret.replace(lastLoc, 3, "<p/>");
-
-	//Reset lastLoc
-	lastLoc = 0;
-	
-	while ((lastLoc = ret.find("<hr>", lastLoc)) != string::npos)
-		ret.replace(lastLoc, 4, "<hr/>");
-
-	//Reset again
-	lastLoc = 0;
-	
-	//<br> should be <br /> for evernote to not complain :P. All <br> tags, regardless of content, must end in />
-	string potentialDanger = "<br";
-	
-	while ((lastLoc = ret.find(potentialDanger, lastLoc)) != string::npos)
-	{
-		lastLoc = ret.find(">", lastLoc);
-
-		if (ret[lastLoc - 1] != '/')
-			ret.insert(lastLoc, "/");
-	}
-	
-	return ret;
-}
-
-void NoteView::showNote(const Note& note)
-{
-	this->note = note;
-	this->noteTitle->set_text(note.title);
-
-	//Write input to file for debugging
-	//ofstream out("in.html");
-	//out << note.content;
-	//out.close();
-
-	this->showHtml(note.content);
-}
-
-const Note& NoteView::getNote()
-{
-	//Update note content and title
-	this->note.content = getHtml();
-	this->note.title = noteTitle->get_text();
-
-	//Print out current note content
-	//ofstream out("out.html");
-	//out << note.content;
-	//out.close();
-
-	return note;
-}
-
-bool NoteView::execDom(const std::string& command, const std::string& commandVal)
-{
-	WebKitDOMDocument *domDoc = webkit_web_view_get_dom_document(view);
-	
-	return webkit_dom_document_exec_command(domDoc, command.c_str(), false, commandVal.c_str());
-}
-
-bool NoteView::queryDomComState(const std::string& command)
-{
-	WebKitDOMDocument *domDoc = webkit_web_view_get_dom_document(view);
-
-	return webkit_dom_document_query_command_state(domDoc, command.c_str());
-}
-
-bool NoteView::isNoteFocus()
-{
-	return gtk_widget_is_focus(GTK_WIDGET(view));
-}
-
-void NoteView::tabAction()
-{
-	if (queryDomComState("insertUnorderedList") || queryDomComState("insertOrderedList"))
-		this->execDom("indent");
-	else
-		this->execDom("insertHTML", "&nbsp;&nbsp;&nbsp;&nbsp;");
 }
 
 bool NoteView::onKeyPress(GdkEventKey *event)
@@ -265,6 +279,10 @@ bool NoteView::onKeyPress(GdkEventKey *event)
 			//Ctrl options
 			switch (event->keyval)
 			{
+				//Ctrl+s to save the note
+				case GDK_KEY_s:
+					this->saveNote();
+					return true;
 				//Ctrl+= to sub
 				case GDK_KEY_equal:
 					execDom("subscript");
@@ -303,7 +321,7 @@ bool NoteView::onKeyPress(GdkEventKey *event)
 					return true;
 				//Ctrl+p to print note text to console
 				case GDK_KEY_p:
-					cout << this->getHtml() << endl;
+					cout << this->getEnml() << endl;
 					return true;					
 			}
 		}
