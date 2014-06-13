@@ -9,11 +9,20 @@
 
 #include <gtkmm.h>
 #include <string>
+#include <map>
 #include "evernote_api/src/NoteStore.h"
-#include <webkit/webkitwebview.h>
+#include <webkit/webkit.h>
 #include "DatabaseClient.h"
 
 const std::string NOTE_HEAD = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE en-note SYSTEM \"http://xml.evernote.com/pub/enml2.dtd\">\n";
+const std::string RES_DIR = "res/";
+
+struct ResInfo
+{
+	std::string fileLoc;
+	std::string resGuid;
+	std::string resName;
+};
 
 class NoteView : public Gtk::Box
 {
@@ -25,8 +34,8 @@ public:
 	void setDatabase(DatabaseClient *db);
 	
 	//Display html
-	void showEnml(std::string enml);
-	
+	void showEnml(std::string enml);	
+
 	//Get currently displayed html
 	std::string getEnml();
 
@@ -57,6 +66,7 @@ private:
 	
 	//Currently displayed note
 	evernote::edam::Note note;
+	std::map<std::string, ResInfo> resLocs;
 
 	//Gtkmm widgets that belong to the note view, accessed via builder
 	Gtk::Entry *noteTitle;
@@ -77,6 +87,15 @@ private:
 	void stripTag(std::string& ret, const std::string& remove);
 	void stripTag(std::string& ret, size_t tagPos);
 
+	//Media formatting
+	void handleMedia(std::string& ret);
+	std::string getReplacementTag(std::string mediaTag);
+	std::string getProperty(std::string& mediaTag, std::string prop, bool strip = false);
+
+	//Resource management methods
+	void inflateResources(const evernote::edam::Note& note);
+	std::string inflateResource(const evernote::edam::Resource& res);
+
 	//Key listener to change editing actions
 	bool onKeyPress(GdkEventKey *event);
 
@@ -85,6 +104,18 @@ private:
 	void onIndentClick();
 	void onInsertOrderedClick();
 	void onInsertUnorderedClick();
+
+	//Web view signal handlers. Must be static, receiving this as a parameter.
+	static gboolean handleNavigation(WebKitWebView *view,
+							  WebKitWebFrame *frame,
+							  WebKitNetworkRequest *request,
+							  WebKitWebNavigationAction *navAction,
+							  WebKitWebPolicyDecision *decision,
+							  gpointer nView);
+
+	static gboolean handleDownload(WebKitWebView *view,
+								   WebKitDownload *download,
+								   gpointer nView);
 };
 
 #endif

@@ -116,22 +116,6 @@ void EvernoteClient::getSyncChunks(vector<SyncChunk>& cBuffer, bool fullSync)
 
 	//Buffer final chunk
 	cBuffer.push_back(chunky);
-
-	/*
-	for (vector<SyncChunk>::iterator it = cBuffer.begin(); it != cBuffer.end(); it++)
-	{
-		chunky = *it;
-		//TODO REMOVE: Show resources in sync chunk:
-		for (size_t i = 0; i < chunky.notes.size(); i++)
-		{
-			for (size_t j = 0; j < chunky.notes[i].resources.size(); j++)
-			{
-				Resource r = chunky.notes[i].resources[j];
-				cout << "Note title = " << chunky.notes[i].title << ", guid = " << r.noteGuid << " and resource Guid = " << r.guid << ", is data set = " << r.__isset.data << ", is data hash set = " << r.data.__isset.bodyHash << ", and is data body set = " << r.data.__isset.body << endl;
-			}
-		}
-	}
-	*/
 }
 
 void EvernoteClient::resolveServerChanges(const vector<SyncChunk>& cBuffer, bool fullSync)
@@ -263,6 +247,8 @@ void EvernoteClient::processChunk(const SyncChunk& chunk, bool fullSync)
 			//Dirty or not, just update the local resource if the server's is newer
 			else if (r.updateSequenceNum > lr.updateSequenceNum)
 			{
+				nStore->getResource(r, devToken, r.guid, true, false, true, false);
+				
 				db->updateResource(r);
 				db->unflagDirty(r);
 			}

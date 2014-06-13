@@ -5,7 +5,8 @@
  */
 
 #include "NoteView.h"
-#include <iostream>
+#include "BetternoteUtils.h"
+#include <fstream>
 
 #define BUF_FLAG "I_AM_A_BUFFER_AMA"
 
@@ -67,6 +68,9 @@ void NoteView::showNote(const Guid& noteGuid)
 {
 	if (db->getNoteByGuid(note, noteGuid))
 	{
+		//Start by inflating resources associated with this note
+		inflateResources(note);
+		
 		this->noteTitle->set_text(note.title);
 		this->showEnml(note.content);
 	}
@@ -161,11 +165,23 @@ void NoteView::showWebView()
 	gtk_widget_set_hexpand(GTK_WIDGET(view), true);
 	gtk_widget_set_vexpand(GTK_WIDGET(view), true);
 
-	//Show
-	gtk_widget_show(GTK_WIDGET(view));
-
 	//Set editable
 	webkit_web_view_set_editable(view, true);
+
+	//Set signal handlers
+	//Navigation handler
+	g_signal_connect(G_OBJECT(view),
+					 "navigation-policy-decision-requested",
+					 G_CALLBACK(&NoteView::handleNavigation),
+					 this);
+	//Download handler
+	g_signal_connect(G_OBJECT(view),
+					 "download-requested",
+					 G_CALLBACK(&NoteView::handleDownload),
+					 this);
+	
+	//Show
+	gtk_widget_show(GTK_WIDGET(view));
 
 	//Show it in the container
 	gtk_container_add(GTK_CONTAINER(primaryWindow->gobj()), GTK_WIDGET(view));
@@ -194,6 +210,9 @@ void NoteView::toHtml(string& ret)
 
 	//Now add html start and end tags
 	ret = "<html><body>" + ret + "</body></html>";
+
+	//Now for the hard part: resouce replacement
+	handleMedia(ret);
 }
 
 void NoteView::toEnml(string& ret)
@@ -221,7 +240,7 @@ void NoteView::insertTagClose(string& ret, const string& tagOpen, const string& 
 	{
 		lastLoc = ret.find(">", lastLoc);
 
-		if (ret.substr(lastLoc - insert.length(), insert.length()) != insert)
+		if (lastLoc < insert.length() || ret.substr(lastLoc - insert.length(), insert.length()) != insert)
 			ret.insert(lastLoc, insert);
 	}
 }
@@ -241,6 +260,160 @@ void NoteView::stripTag(string& ret, size_t tagPos)
 	size_t end = ret.find(">", tagPos);
 
 	ret.erase(tagPos, end - tagPos + 1);	
+}
+
+void NoteView::handleMedia(string& ret)
+{
+	//Replace <en-media> tags with their html equivalents
+	size_t lastLoc = 0;
+
+	while ((lastLoc = ret.find("<en-media", lastLoc)) != string::npos)
+	{
+		size_t endLoc = ret.find(">", lastLoc);
+
+		//Needs to include ending tag, so add 1 to length
+		size_t len = endLoc - lastLoc + 1;
+
+		//Now carry out tag replacement
+		ret.replace(lastLoc, len, getReplacementTag(ret.substr(lastLoc, len)));
+	}
+}
+
+string NoteView::getReplacementTag(string mediaTag)
+{
+	//Get the identifying hash of the resource (and erase from tag)
+	string hash = getProperty(mediaTag, "hash", true);
+
+	//Convert hex to binary string:
+	hash = Util::hexToBinaryString(hash);
+
+	//Try to get the iterator to the hash
+	std::map<string, ResInfo>::iterator it = resLocs.find(hash);
+
+	//Invalid hash, strip tag
+	if (it == resLocs.end())
+	{
+		cerr << "Could not get hash " << hash << endl;
+		return "";
+	}
+
+	ResInfo res = it->second;
+	
+	//Get the mime type
+	string mime = getProperty(mediaTag, "type", true);
+
+	string media = "en-media";
+
+	//Handle image
+	if (mime.find("image") != string::npos)
+	{
+		//Carry out replacement of media tag with img
+		mediaTag.replace(mediaTag.find(media), media.length(), "img");
+
+		string srcInfo = "src=\"" + res.fileLoc + "\"";
+		
+		//Now add in the src tag at the end
+		mediaTag.insert(mediaTag.find(">"), srcInfo);
+	}
+	//Currently, handle all other resources by just putting an anchor to them
+	else
+	{
+		mediaTag.replace(mediaTag.find(media), media.length(), "a");
+
+		//Plant a link with the 
+		string hrefInfo = "href=\"" + res.fileLoc + "\" download=\"" + res.resName + "\">" + res.resName + "</a>";
+
+		//Now insert the href at the end of the tag
+		mediaTag.erase(mediaTag.find(">"));
+		mediaTag = mediaTag + hrefInfo;
+	}
+
+	cout << mediaTag << endl;
+
+	return mediaTag;
+}
+
+string NoteView::getProperty(string& mediaTag, string prop, bool strip)
+{
+	//Add in equals
+	prop = prop + "=";
+
+	//Find start of property value
+	size_t propStart = mediaTag.find(prop);
+	size_t start = propStart + prop.length();
+
+	bool hasQuotes = (mediaTag[start] == '\"');
+
+	if (hasQuotes)
+		start++;
+	
+	size_t end;
+
+	if (hasQuotes)
+		end = mediaTag.find("\"", start);
+	else
+		end = min(mediaTag.find(" ", start), mediaTag.find(">", start));
+
+	string propVal = mediaTag.substr(start, end - start);
+
+	//Move end up one for space checking
+	end++;
+
+	//Strip trailing spaces from tag
+	while (mediaTag[end] == ' ')
+		end++;
+	
+	//Erase if strip is set
+	if (strip)
+		mediaTag.erase(propStart, end - propStart);
+	
+	return propVal;
+}
+
+void NoteView::inflateResources(const Note& note)
+{
+	//Clear out resource map
+	resLocs.clear();
+	
+	//Get resources out of database
+	vector<Resource> res;
+	db->getResourcesInNote(res, note);
+
+	//Inflate each resource
+	for (vector<Resource>::iterator it = res.begin(); it != res.end(); it++)
+	{
+		string fileLoc = inflateResource(*it);
+
+		ResInfo info;
+
+		//In the resouce info, hold the location of the file and the guid of the resource
+		info.fileLoc = fileLoc;
+		info.resGuid = it->guid;
+		info.resName = (it->attributes.__isset.fileName ? it->attributes.fileName : it->guid);
+
+		//Place location in resource map for easy recovery. Helps with link swapping
+		resLocs[it->data.bodyHash] = info;
+	}
+}
+
+string NoteView::inflateResource(const Resource& res)
+{
+	//Determine file name
+	string fileName = baseUrl + "/" + RES_DIR + (res.attributes.__isset.fileName ? res.attributes.fileName : res.guid);
+
+	//Open file
+	ofstream out;
+	out.open(fileName.c_str(), ios::out | ios::binary);
+
+	//Write to file
+	if (out.is_open())
+		out.write(res.data.body.c_str(), res.data.body.length());
+	else
+		cerr << "Could not write resource to file" << endl;
+
+	out.close();
+
+	return fileName;
 }
 
 bool NoteView::onKeyPress(GdkEventKey *event)
@@ -350,4 +523,25 @@ void NoteView::onInsertOrderedClick()
 void NoteView::onInsertUnorderedClick()
 {
 	execDom("insertUnorderedList");
+}
+
+gboolean NoteView::handleNavigation(WebKitWebView *view, WebKitWebFrame *frame, WebKitNetworkRequest *request, WebKitWebNavigationAction *navAction, WebKitWebPolicyDecision *decision, gpointer nView)
+{
+	WebKitWebNavigationReason reason = webkit_web_navigation_action_get_reason(navAction);
+
+	//Download actually opens the file in the default program rather than downloading
+	//Probably not the smartest way to handle things.
+	if (reason == WEBKIT_WEB_NAVIGATION_REASON_LINK_CLICKED)
+		webkit_web_policy_decision_download(decision);
+
+	//Go default if navigation happened for some other reason
+	return false;
+}
+
+gboolean NoteView::handleDownload(WebKitWebView *view, WebKitDownload *download, gpointer nView)
+{
+	//Launch program to view/alter
+	gtk_show_uri(NULL, webkit_download_get_uri(download), GDK_CURRENT_TIME, NULL);
+	
+	return true;
 }

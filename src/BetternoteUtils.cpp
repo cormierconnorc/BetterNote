@@ -51,3 +51,62 @@ Guid Util::genGuid()
 
 	return chars.str();
 }
+
+int Util::getIntEquiv(char hex)
+{
+	if (hex >= '0' && hex <= '9')
+		return hex - '0';
+	else if (hex >= 'A' && hex <= 'F')
+		return hex - 'A' + 10;
+	else
+		return hex - 'a' + 10;
+}
+
+char Util::getHexEquiv(int integer)
+{
+	if (integer < 10)
+		return (char)(integer + '0');
+	else
+		return (char)(integer - 10 + 'a');
+}
+
+string Util::hexToBinaryString(string hex)
+{
+	//If length is not divisible by 2, add a 0 byte to the start
+	if (hex.length() % 2 != 0)
+		hex = "0" + hex;
+	
+	//Create a buffer to hold the binary string
+	char buffer[hex.length() / 2];
+
+	//Look at 2 characters in the hex string each time, matching them with 1 buffer char
+	for (size_t i = 0; i < hex.length(); i += 2)
+	{
+		int high = getIntEquiv(hex[i]), low = getIntEquiv(hex[i + 1]);
+
+		buffer[i / 2] = ((high & 0xF) << 4) | (low & 0xF);
+	}
+
+	//Now convert it to a string
+	return string(buffer, hex.length() / 2);
+	
+}
+
+string Util::binaryToHexString(string bin)
+{
+	//Hex buffer
+	char buffer[bin.length() * 2];
+
+	for (size_t i = 0; i < bin.length(); i++)
+	{
+		char fullByte = bin[i];
+		
+		//High side of buffer:
+		buffer[i * 2] = getHexEquiv((fullByte >> 4) & 0xF);
+
+		//Low side of buffer:
+		buffer[i * 2 + 1] = getHexEquiv(fullByte & 0xF);
+	}
+
+	return string(buffer, bin.length() * 2);
+}

@@ -58,11 +58,11 @@ public:
 	bool purgeDeletedNotes();
 
 	//Special note tasks
-	bool getResourcesInNote(std::vector<evernote::edam::Resource>& ret, const evernote::edam::Note& note, bool withData);
+	bool getResourcesInNote(std::vector<evernote::edam::Resource>& ret, const evernote::edam::Note& note, bool withData = true);
 	bool removeResourcesInNote(const evernote::edam::Note& note);
 	
 	//Resource retrieval methods
-	bool getResourceByGuid(evernote::edam::Resource& ret, const evernote::edam::Guid& guid, bool withData);
+	bool getResourceByGuid(evernote::edam::Resource& ret, const evernote::edam::Guid& guid, bool withData = true);
 
 	//Resource alteration methods
 	bool addResource(const evernote::edam::Resource& res);

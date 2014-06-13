@@ -705,7 +705,7 @@ bool DatabaseClient::validateTables()
 	string syncInfoSchema = "CREATE TABLE syncInfo(syncTime integer, lastUpdateCount integer)";
 	string noteSchema = "CREATE TABLE notes(guid text primary key, title text, content text, deleted integer, usn integer, notebookGuid text, dirty integer)";
 	string notebookSchema = "CREATE TABLE notebooks(guid text primary key, name text, usn integer, isDefault integer, stack text, dirty integer)";
-	string resourceSchema = "CREATE TABLE resources(guid text primary key, noteGuid text, bodyHash text, body text, mime text, fileName text, usn integer, dirty integer)";
+	string resourceSchema = "CREATE TABLE resources(guid text primary key, noteGuid text, bodyHash blob, body blob, mime text, fileName text, usn integer, dirty integer)";
 	
 	if (sqlite3_prepare_v2(db, "select sql from sqlite_master where type='table' order by name;", -1, &schemaStatement, 0) != SQLITE_OK)
 		return false;
@@ -919,6 +919,7 @@ void DatabaseClient::prepareResource(Resource& res, bool withData)
 	res.__isset.updateSequenceNum = true;
 	res.data.__isset.bodyHash = true;
 	res.data.__isset.body = withData;
+	res.data.__isset.size = true;
 	res.attributes.__isset.fileName = true;
 }
 
@@ -995,10 +996,19 @@ void DatabaseClient::fetchResources(vector<Resource>& ret, sqlite3_stmt *readySt
 
 		r.guid = (char *)sqlite3_column_text(readyStat, c++);
 		r.noteGuid = (char *)sqlite3_column_text(readyStat, c++);
-		r.data.bodyHash = (char *)sqlite3_column_text(readyStat, c++);
 
+		//Get body hash length
+		size_t bHashLen = (size_t)sqlite3_column_bytes(readyStat, c);
+		r.data.bodyHash = string((char *)sqlite3_column_blob(readyStat, c++), bHashLen);
+
+		//Get size of body
+		r.data.size = sqlite3_column_bytes(readyStat, c);
+
+		//Get data if requested
 		if (withData)
-			r.data.body = (char *)sqlite3_column_text(readyStat, c++);
+			r.data.body = string((char *)sqlite3_column_blob(readyStat, c++), r.data.size);
+		else
+			c++;
 
 		r.mime = (char *)sqlite3_column_text(readyStat, c++);
 		r.attributes.fileName = (char *)sqlite3_column_text(readyStat, c++);
@@ -1043,8 +1053,8 @@ void DatabaseClient::bindResource(sqlite3_stmt *stat, const Resource& res, bool 
 	//Bind each field of resource to statement
 	sqlite3_bind_text(stat, 1, res.guid.c_str(), -1, SQLITE_STATIC);
 	sqlite3_bind_text(stat, 2, res.noteGuid.c_str(), -1, SQLITE_STATIC);
-	sqlite3_bind_text(stat, 3, res.data.bodyHash.c_str(), -1, SQLITE_STATIC);
-	sqlite3_bind_text(stat, 4, res.data.body.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_blob(stat, 3, res.data.bodyHash.c_str(), res.data.bodyHash.length(), SQLITE_STATIC);
+	sqlite3_bind_blob(stat, 4, res.data.body.c_str(), res.data.body.length(), SQLITE_STATIC);
 	sqlite3_bind_text(stat, 5, res.mime.c_str(), -1, SQLITE_STATIC);
 	sqlite3_bind_text(stat, 6, res.attributes.fileName.c_str(), -1, SQLITE_STATIC);
 	sqlite3_bind_int(stat, 7, (res.__isset.updateSequenceNum ? res.updateSequenceNum : -1));
