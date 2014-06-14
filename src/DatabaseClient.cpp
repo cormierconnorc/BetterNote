@@ -446,6 +446,13 @@ bool DatabaseClient::removeResource(const Resource& res)
 	return ret;
 }
 
+bool DatabaseClient::purgeDeletedNoteResources()
+{
+	bool ret = execSyncNoRes(sPurgeDeletedNoteResources);
+	sReset(sPurgeDeletedNoteResources);
+	return ret;
+}
+
 bool DatabaseClient::getDirtyResourcesInNote(vector<Resource>& ret, const Note& note)
 {
 	sqlite3_stmt *s = sGetDirtyResourcesInNote;
@@ -662,6 +669,63 @@ bool DatabaseClient::unflagDirty(const Resource& res)
 	return setDirty(res, false);
 }
 
+bool DatabaseClient::unflagNoteResourcesDirty(const Note& note)
+{
+	sqlite3_stmt *s = sUnflagNoteResourcesDirty;
+
+	sqlite3_bind_text(s, 1, note.guid.c_str(), -1, SQLITE_STATIC);
+
+	bool ret = execSyncNoRes(s);
+
+	sReset(s);
+
+	return ret;
+}
+
+void DatabaseClient::prepareNotebook(Notebook& notebook)
+{
+	//Set it equal to a new isset object, making all fields false
+	notebook.__isset = _Notebook__isset();
+
+	//Set the fields in the database to true. Note: this can be changed if fields are unset in db.
+	notebook.__isset.guid = true;
+	notebook.__isset.name = true;
+	notebook.__isset.updateSequenceNum = true;
+	notebook.__isset.defaultNotebook = true;
+	notebook.__isset.stack = true;
+}
+
+void DatabaseClient::prepareNote(Note& note)
+{
+	note.__isset = _Note__isset();
+
+	note.__isset.guid = true;
+	note.__isset.title = true;
+	note.__isset.content = true;
+	note.__isset.deleted = true;
+	note.__isset.updateSequenceNum = true;
+	note.__isset.notebookGuid = true;
+}
+
+void DatabaseClient::prepareResource(Resource& res, bool withData)
+{
+	res.__isset = _Resource__isset();
+	res.data.__isset = _Data__isset();
+	res.attributes.__isset = _ResourceAttributes__isset();
+
+	//Set fields in Database to true
+	res.__isset.guid = true;
+	res.__isset.noteGuid = true;
+	res.__isset.data = true;
+	res.__isset.mime = true;
+	res.__isset.attributes = true;
+	res.__isset.updateSequenceNum = true;
+	res.data.__isset.bodyHash = true;
+	res.data.__isset.body = withData;
+	res.data.__isset.size = true;
+	res.attributes.__isset.fileName = true;
+}
+
 bool DatabaseClient::execSyncNoRes(const string& stat)
 {
 	sqlite3_stmt *nStat;
@@ -803,7 +867,6 @@ void DatabaseClient::prepareStatements()
 	sqlite3_prepare_v2(db, "delete from notes where guid=?", -1, &sRemoveNote, 0);
 	sqlite3_prepare_v2(db, "update notes set deleted=? where guid=?", -1, &sDeleteNote, 0);
 	sqlite3_prepare_v2(db, "delete from notes where deleted!=-1", -1, &sPurgeDeletedNotes, 0);
-	//TODO write and test
 	sqlite3_prepare_v2(db, "select * from resources where noteGuid=?", -1, &sGetResourcesInNote, 0);
 	sqlite3_prepare_v2(db, "select guid,noteGuid,bodyHash,mime,fileName,usn from resources where noteGuid=?", -1, &sGetResourcesInNoteNoData, 0);
 	sqlite3_prepare_v2(db, "delete from resources where noteGuid=?", -1, &sRemoveResourcesInNote, 0);
@@ -812,22 +875,19 @@ void DatabaseClient::prepareStatements()
 	sqlite3_prepare_v2(db, "insert into resources values (?, ?, ?, ?, ?, ?, ?, ?)", -1, &sAddResource, 0);
 	sqlite3_prepare_v2(db, "update resources set guid=?,noteGuid=?,bodyHash=?,body=?,mime=?,fileName=?,usn=?,dirty=? where guid=?", -1, &sUpdateResource, 0);
 	sqlite3_prepare_v2(db, "delete from resources where guid=?", -1, &sRemoveResource, 0);
-	sqlite3_prepare_v2(db, "select * from resources where dirty!=0", -1, &sGetDirtyResourcesInNote, 0);
-	sqlite3_prepare_v2(db, "select guid,noteGuid,bodyHash,mime,fileName,usn from resources where dirty=0", -1, &sGetCleanResourcesInNoteNoData, 0);
-	//END TODO
+	sqlite3_prepare_v2(db, "delete from resources where noteGuid not in (select guid from notes)", -1, &sPurgeDeletedNoteResources, 0);
+	sqlite3_prepare_v2(db, "select * from resources where dirty!=0 and noteGuid=?", -1, &sGetDirtyResourcesInNote, 0);
+	sqlite3_prepare_v2(db, "select guid,noteGuid,bodyHash,mime,fileName,usn from resources where dirty=0 and noteGuid=?", -1, &sGetCleanResourcesInNoteNoData, 0);
 	sqlite3_prepare_v2(db, "select * from notebooks where dirty!=0", -1, &sGetDirtyNotebooks, 0);
 	sqlite3_prepare_v2(db, "select * from notes where dirty!=0", -1, &sGetDirtyNotes, 0);
 	sqlite3_prepare_v2(db, "select dirty from notebooks where guid=?", -1, &sIsNotebookDirty, 0);
 	sqlite3_prepare_v2(db, "select dirty from notes where guid=?", -1, &sIsNoteDirty, 0);
-	//TODO
 	sqlite3_prepare_v2(db, "select dirty from resources where guid=?", -1, &sIsResourceDirty, 0);
-	//END TODO
 	sqlite3_prepare_v2(db, "update notebooks set dirty=? where guid=?", -1, &sSetNotebookDirty, 0);
 	sqlite3_prepare_v2(db, "update notes set dirty=? where guid=?", -1, &sSetNoteDirty, 0);
-	//TODO
 	sqlite3_prepare_v2(db, "update resources set dirty=? where guid=?", -1, &sSetResourceDirty, 0);
-	//END TODO
 	sqlite3_prepare_v2(db, "update notes set dirty=1 where notebookGuid=?", -1, &sFlagNotesInNotebookDirty, 0);
+	sqlite3_prepare_v2(db, "update resources set dirty=0 where noteGuid=?", -1, &sUnflagNoteResourcesDirty, 0);
 }
 
 void DatabaseClient::finalizeStatements()
@@ -860,6 +920,7 @@ void DatabaseClient::finalizeStatements()
 	sqlite3_finalize(sAddResource);
 	sqlite3_finalize(sUpdateResource);
 	sqlite3_finalize(sRemoveResource);
+	sqlite3_finalize(sPurgeDeletedNoteResources);
 	sqlite3_finalize(sGetDirtyResourcesInNote);
 	sqlite3_finalize(sGetCleanResourcesInNoteNoData);
 	sqlite3_finalize(sGetDirtyNotebooks);
@@ -871,56 +932,13 @@ void DatabaseClient::finalizeStatements()
 	sqlite3_finalize(sSetNoteDirty);
 	sqlite3_finalize(sSetResourceDirty);
 	sqlite3_finalize(sFlagNotesInNotebookDirty);
+	sqlite3_finalize(sUnflagNoteResourcesDirty);
 }
 
 void DatabaseClient::sReset(sqlite3_stmt *stat)
 {
 	sqlite3_reset(stat);
 	sqlite3_clear_bindings(stat);
-}
-
-void DatabaseClient::prepareNotebook(Notebook& notebook)
-{
-	//Set it equal to a new isset object, making all fields false
-	notebook.__isset = _Notebook__isset();
-
-	//Set the fields in the database to true. Note: this can be changed if fields are unset in db.
-	notebook.__isset.guid = true;
-	notebook.__isset.name = true;
-	notebook.__isset.updateSequenceNum = true;
-	notebook.__isset.defaultNotebook = true;
-	notebook.__isset.stack = true;
-}
-
-void DatabaseClient::prepareNote(Note& note)
-{
-	note.__isset = _Note__isset();
-
-	note.__isset.guid = true;
-	note.__isset.title = true;
-	note.__isset.content = true;
-	note.__isset.deleted = true;
-	note.__isset.updateSequenceNum = true;
-	note.__isset.notebookGuid = true;
-}
-
-void DatabaseClient::prepareResource(Resource& res, bool withData)
-{
-	res.__isset = _Resource__isset();
-	res.data.__isset = _Data__isset();
-	res.attributes.__isset = _ResourceAttributes__isset();
-
-	//Set fields in Database to true
-	res.__isset.guid = true;
-	res.__isset.noteGuid = true;
-	res.__isset.data = true;
-	res.__isset.mime = true;
-	res.__isset.attributes = true;
-	res.__isset.updateSequenceNum = true;
-	res.data.__isset.bodyHash = true;
-	res.data.__isset.body = withData;
-	res.data.__isset.size = true;
-	res.attributes.__isset.fileName = true;
 }
 
 void DatabaseClient::fetchNotebooks(vector<Notebook>& ret, sqlite3_stmt *readyStat)

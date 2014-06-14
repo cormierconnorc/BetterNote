@@ -9,12 +9,4 @@ A2. OAuth
 A3. User authentication
 B1. Move note formatting functions to dedicated class for cleaner code
 B2. Implement resource handling
---High-level overview:
----To do this, sync resources and store in database in the same way as notes and notebooks. When a note is loaded, unpack the relevant resources to a temporary folder and point the links in the html document towards them. When the note is closed/saved, look through each en-media tag in the note, checking each existing resource for changes by calculating the MD5 hash and comparing it to the hash in the database. Once all existing resources have been updated (and flagged as dirty) as appropriate, remove the original resources that are no longer referenced from the database (just remove them from the database. No need to maintain a note resource list locally in the notes table, the noteGuid field in the Resource table will be used to identify all associated resources). Afterwards, iterate over the note again looking for references to new resources, such as <img> tags. Put the data of these resources into the resources table. Convert these into <en-media> tags containing a reference to a resource with the proper Guid. Now synchronization can be safely carried out.
---Steps:
----Add resource synchronization in Evernote Client
----Add resource handling methods to Database Client (including all alterations necessary to support a resource table)
----Alter the note view to properly display resources and update their HTML values upon save (getHtml() method).
----Have NoteView perform resource verification and use signals to communicate resource changes to the NoteWindow.
---Resources in the database: which properties to include?
----guid, noteGuid, bodyHash, body, mime, fileName, usn
+--Mostly complete: fix update bug.

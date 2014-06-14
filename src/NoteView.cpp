@@ -6,7 +6,7 @@
 
 #include "NoteView.h"
 #include "BetternoteUtils.h"
-#include <fstream>
+#include <cstdio>
 
 #define BUF_FLAG "I_AM_A_BUFFER_AMA"
 
@@ -28,6 +28,9 @@ NoteView::NoteView(BaseObjectType* cObj, const Glib::RefPtr<Gtk::Builder>& build
 
 NoteView::~NoteView()
 {
+	//Deflate resources
+	finalizeResources();
+	
 	gtk_widget_destroy(GTK_WIDGET(view));
 }
 
@@ -40,7 +43,7 @@ void NoteView::showEnml(string enml)
 {
 	this->toHtml(enml);
 	
-	webkit_web_view_load_string(view, enml.c_str(), NULL, NULL, "file://");
+	webkit_web_view_load_string(view, enml.c_str(), NULL, NULL, FILE_SRC.c_str());
 }
 
 string NoteView::getEnml()
@@ -66,6 +69,9 @@ string NoteView::getEnml()
 
 void NoteView::showNote(const Guid& noteGuid)
 {
+	//Finalize the previous note
+	finalizeResources();
+	
 	if (db->getNoteByGuid(note, noteGuid))
 	{
 		//Start by inflating resources associated with this note
@@ -179,6 +185,11 @@ void NoteView::showWebView()
 					 "download-requested",
 					 G_CALLBACK(&NoteView::handleDownload),
 					 this);
+	//Bind webview's drag-data-get. Change data as necessary to link file
+	g_signal_connect(G_OBJECT(view),
+					 "drag-data-received",
+					 G_CALLBACK(&NoteView::handlePaste),
+					 this);
 	
 	//Show
 	gtk_widget_show(GTK_WIDGET(view));
@@ -212,7 +223,7 @@ void NoteView::toHtml(string& ret)
 	ret = "<html><body>" + ret + "</body></html>";
 
 	//Now for the hard part: resouce replacement
-	handleMedia(ret);
+	handleMediaInflate(ret);
 }
 
 void NoteView::toEnml(string& ret)
@@ -230,6 +241,9 @@ void NoteView::toEnml(string& ret)
 	insertTagClose(ret, "<p");
 	insertTagClose(ret, "<hr");
 	insertTagClose(ret, "<br");
+
+	//Deflate all resources, updating em-media tags and the database
+	handleMediaDeflate(ret);
 }
 
 void NoteView::insertTagClose(string& ret, const string& tagOpen, const string& insert)
@@ -262,25 +276,88 @@ void NoteView::stripTag(string& ret, size_t tagPos)
 	ret.erase(tagPos, end - tagPos + 1);	
 }
 
-void NoteView::handleMedia(string& ret)
+void NoteView::handleMediaInflate(string& ret)
+{
+	//Replace <en-media> tags with their html equivalents
+	doTagReplace(ret, "en-media", &NoteView::getInflateReplacementTag);
+}
+
+void NoteView::handleMediaDeflate(string& ret)
+{
+	//Remove all <img> tags first, replacing them with en-media
+	doTagReplace(ret, "img", &NoteView::getDeflateReplacementTag);
+
+	//Replace all <a> tags with file:// href's
+	doTagReplace(ret, "a", &NoteView::getDeflateReplacementTag);
+
+	//Remove orphaned resources
+	removeOrphans();
+
+	//Legitimize update map
+	resLocs = updateRes;
+
+	//Now clear away updates
+	updateRes.clear();
+}
+
+void NoteView::doTagReplace(string& ret, const string& tag, string (NoteView::*getReplacement)(string))
 {
 	//Replace <en-media> tags with their html equivalents
 	size_t lastLoc = 0;
 
-	while ((lastLoc = ret.find("<en-media", lastLoc)) != string::npos)
+	while ((lastLoc = ret.find("<" + tag, lastLoc)) != string::npos)
 	{
+		//Find the close location of this tag
 		size_t endLoc = ret.find(">", lastLoc);
+
+		//This tag is not closed. Find the matching close
+		if (ret[endLoc - 1] != '/')
+		{
+			int level = 0;
+			
+			for (size_t i = endLoc; i < ret.length() - (tag.length() + 3); i++)
+			{
+				//Tag change. update level
+				if (ret[i] == '<')
+				{
+					if (ret[i + 1] == '/' && ret.substr(i + 2, tag.length()) == tag)
+						level--;
+					else if (ret.substr(i + 1, tag.length()) == tag)
+						level++;
+				}
+
+				//We've found the end when level is < 0
+				if (level < 0)
+				{
+					endLoc = ret.find(">", i);
+					break;
+				}
+			}
+		}
 
 		//Needs to include ending tag, so add 1 to length
 		size_t len = endLoc - lastLoc + 1;
 
 		//Now carry out tag replacement
-		ret.replace(lastLoc, len, getReplacementTag(ret.substr(lastLoc, len)));
+		ret.replace(lastLoc, len, (this->*getReplacement)(ret.substr(lastLoc, len)));
+
+		//Add one to lastLoc to prevent tag refinds in absence of replace
+		lastLoc++;
 	}
 }
 
-string NoteView::getReplacementTag(string mediaTag)
+string NoteView::getInflateReplacementTag(string mediaTag)
 {
+	string media = "en-media";
+
+	size_t eLoc;
+	
+	//Remove the closing tag or /
+	if ((eLoc = mediaTag.rfind("</" + media)) != string::npos)
+		mediaTag.erase(eLoc);
+	else if ((eLoc = mediaTag.rfind("/")) != string::npos)
+		mediaTag.erase(eLoc, 1);
+	
 	//Get the identifying hash of the resource (and erase from tag)
 	string hash = getProperty(mediaTag, "hash", true);
 
@@ -302,15 +379,24 @@ string NoteView::getReplacementTag(string mediaTag)
 	//Get the mime type
 	string mime = getProperty(mediaTag, "type", true);
 
-	string media = "en-media";
-
 	//Handle image
 	if (mime.find("image") != string::npos)
 	{
 		//Carry out replacement of media tag with img
 		mediaTag.replace(mediaTag.find(media), media.length(), "img");
 
-		string srcInfo = "src=\"" + res.fileLoc + "\"";
+		//Strip the current width and height (if exists) and insert widget width
+		if (mediaTag.find("width") != string::npos)
+			getProperty(mediaTag, "width", true);
+		if (mediaTag.find("height") != string::npos)
+			getProperty(mediaTag, "height", true);
+
+		ostringstream out;
+		out << "width=\"" << gtk_widget_get_allocated_width(GTK_WIDGET(view)) << "\" ";
+
+		mediaTag.insert(mediaTag.find(">"), out.str());
+		
+		string srcInfo = "src=\"" + FILE_SRC + res.fileLoc + "\" /";
 		
 		//Now add in the src tag at the end
 		mediaTag.insert(mediaTag.find(">"), srcInfo);
@@ -321,14 +407,109 @@ string NoteView::getReplacementTag(string mediaTag)
 		mediaTag.replace(mediaTag.find(media), media.length(), "a");
 
 		//Plant a link with the 
-		string hrefInfo = "href=\"" + res.fileLoc + "\" download=\"" + res.resName + "\">" + res.resName + "</a>";
+		string hrefInfo = "href=\"" + FILE_SRC + res.fileLoc + "\">" + res.resName + "</a>";
 
 		//Now insert the href at the end of the tag
 		mediaTag.erase(mediaTag.find(">"));
 		mediaTag = mediaTag + hrefInfo;
 	}
+	
+	return mediaTag;
+}
 
-	cout << mediaTag << endl;
+string NoteView::getDeflateReplacementTag(std::string mediaTag)
+{
+	bool isAnchor = mediaTag.find("<a") != string::npos;
+	bool isLocal = mediaTag.find(FILE_SRC) != string::npos;
+
+	//Don't touch the hyperlinks
+	if (isAnchor && !isLocal)
+		return mediaTag;
+
+	string source = getProperty(mediaTag, (isAnchor ? "href" : "src"), true).substr(FILE_SRC.length());
+
+	//Read in source file
+	string fileData;
+	Util::readFile(source, fileData);
+
+	//Now get the hash
+	string hash = Util::getBinaryChecksum(fileData);
+
+	//Also get the mime type from the file
+	gchar *res = g_content_type_guess(source.c_str(), (const unsigned char*)fileData.c_str(), fileData.length(), NULL);
+	gchar *mime = g_content_type_get_mime_type(res);
+
+	string mimeType = mime;
+
+	g_free(res);
+	g_free(mime);
+
+
+	string mediaInfo = "hash=\"" + Util::binaryToHexString(hash) + "\" type=\"" + mimeType + "\" /";
+	
+	//Insert media tag completion into mediaTag
+	mediaTag.insert(mediaTag.find(">"), mediaInfo);
+
+	//Erase superfluous
+	mediaTag.erase(mediaTag.find(">") + 1);
+
+	string name = source.substr(source.rfind("/") + 1);
+
+	//Replace tag with en-media
+	if (isAnchor)
+		mediaTag.replace(mediaTag.find("a"), 1, "en-media");
+	else
+		mediaTag.replace(mediaTag.find("img"), 3, "en-media");
+
+	//insert into database if new, otherwise just get info from reslocs
+	std::map<string, ResInfo>::iterator it = resLocs.find(hash);
+
+	//In old map, and thus in database. Just move info to new map and remove from old
+	if (it != resLocs.end())
+	{
+		ResInfo curInfo = it->second;
+
+		updateRes[hash] = curInfo;
+
+		resLocs.erase(it);
+
+		//TODO remove
+		cout << "Held reference to resource at " << curInfo.fileLoc << endl;
+	}
+	//Not in old map or database, insert
+	else
+	{
+		Resource r;
+		db->prepareResource(r, true);
+
+		//Resource data
+		r.guid = Util::genGuid();
+		r.noteGuid = note.guid;
+		r.data.bodyHash = hash;
+		r.data.size = fileData.length();
+		r.data.body = fileData;
+		r.mime = mimeType;
+		r.attributes.fileName = name;
+
+		//No USN
+		r.__isset.updateSequenceNum = false;
+		r.updateSequenceNum = -1;
+
+		//Add to database and flag dirty
+		db->addResource(r);
+		db->flagDirty(r);
+
+		//Create ResInfo and place in updateRes
+		ResInfo info;
+		info.fileLoc = source;
+		info.resGuid = r.guid;
+		info.resName = r.attributes.fileName;
+
+		updateRes[hash] = info;
+
+		//TODO remove
+		cout << "Created reference to resource at " << info.fileLoc << endl;
+	}
 
 	return mediaTag;
 }
@@ -401,19 +582,70 @@ string NoteView::inflateResource(const Resource& res)
 	//Determine file name
 	string fileName = baseUrl + "/" + RES_DIR + (res.attributes.__isset.fileName ? res.attributes.fileName : res.guid);
 
-	//Open file
-	ofstream out;
-	out.open(fileName.c_str(), ios::out | ios::binary);
-
-	//Write to file
-	if (out.is_open())
-		out.write(res.data.body.c_str(), res.data.body.length());
-	else
-		cerr << "Could not write resource to file" << endl;
-
-	out.close();
+	Util::writeFile(fileName, res.data.body);
 
 	return fileName;
+}
+
+void NoteView::removeOrphans()
+{
+	//Remove all resources still in the resLocs map from both the database and existence
+	//But only delete if in resource folder.
+	for (std::map<string, ResInfo>::iterator it = resLocs.begin(); it != resLocs.end(); it++)
+	{
+		//Only remove if file path is not in the map
+		bool found = false;
+
+		for (std::map<string, ResInfo>::iterator mIt = updateRes.begin(); mIt != updateRes.end(); mIt++)
+		{
+			if (mIt->second.fileLoc == it->second.fileLoc)
+			{
+				found = true;
+				break;
+			}
+		}
+		
+		bool didDelete;
+
+		//Only delete if no other resource references the file
+		if (!found)
+			didDelete = deleteIfInRes(it->second.fileLoc);
+		else
+			didDelete = false;
+
+		//Remove from database
+		Resource r;
+		r.guid = it->second.resGuid;
+
+		db->removeResource(r);
+
+		//TODO remove
+		cout << (didDelete ? "Deleted resource at " : "Failed to delete resource at ") << it->second.fileLoc << endl;
+	}
+}
+
+void NoteView::finalizeResources()
+{
+	//Iterate over resource map, deleting but not removing from db
+	for (std::map<string, ResInfo>::iterator it = resLocs.begin(); it != resLocs.end(); it++)
+	{
+		bool didDelete = deleteIfInRes(it->second.fileLoc);
+
+		//TODO remove
+		cout << (didDelete ? "Deflated " : "Failed to deflate ") << "resource at " << it->second.fileLoc << endl;
+	}
+}
+
+bool NoteView::deleteIfInRes(const string& fileLoc)
+{
+	//Not a res file, don't delete
+	if (fileLoc.find(baseUrl + "/" + RES_DIR) == string::npos)
+		return false;
+
+	//Otherwise, delete
+	if (std::remove(fileLoc.c_str()) == 0)
+		return true;
+	return false;
 }
 
 bool NoteView::onKeyPress(GdkEventKey *event)
@@ -544,4 +776,16 @@ gboolean NoteView::handleDownload(WebKitWebView *view, WebKitDownload *download,
 	gtk_show_uri(NULL, webkit_download_get_uri(download), GDK_CURRENT_TIME, NULL);
 	
 	return true;
+}
+
+void NoteView::handlePaste(GtkWidget *viewWidget, GdkDragContext *context, gint x, gint y, GtkSelectionData *data, guint info, guint time, gpointer nView)
+{
+	//TODO
+	guchar *str = gtk_selection_data_get_text(data);
+
+	if (str)
+	{
+		cout << str << endl;
+		g_free(str);
+	}
 }

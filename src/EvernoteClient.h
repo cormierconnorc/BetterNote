@@ -38,9 +38,11 @@ public:
 	
 	//Resolve server changes with client data. Requires fetching note content and resources for changed objects.
 	void resolveServerChanges(const std::vector<evernote::edam::SyncChunk>& cBuffer, bool fullSync), processChunk(const evernote::edam::SyncChunk& chunk, bool fullSync);
+	void processResources(const evernote::edam::Note& sNote);
 	
 	//Send client changes to server and resolve server response (e.g., changed guid's for newly created notes and notebooks). Return true if need to resync, false otherwise.
 	bool sendClientChanges();
+	bool getNoteResources(const evernote::edam::Note& note);
 	
 	//Get all notebooks associated with current account
 	void getNotebooks(std::vector<evernote::edam::Notebook>& notes);

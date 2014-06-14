@@ -33,7 +33,8 @@ NoteView.o: src/NoteView.cpp src/NoteView.h \
  src/evernote_api/src/NoteStore.h src/evernote_api/src/NoteStore_types.h \
  src/evernote_api/src/UserStore_types.h \
  src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
- src/evernote_api/src/Errors_types.h src/DatabaseClient.h
+ src/evernote_api/src/Errors_types.h src/DatabaseClient.h \
+ src/BetternoteUtils.h src/evernote_api/src/NoteStore_types.h
 NotebookTreeStore.o: src/NotebookTreeStore.cpp src/NotebookTreeStore.h \
  src/evernote_api/src/NoteStore_types.h \
  src/evernote_api/src/UserStore_types.h \
@@ -137,7 +138,8 @@ NoteView.o: src/NoteView.cpp src/NoteView.h \
  src/evernote_api/src/NoteStore.h src/evernote_api/src/NoteStore_types.h \
  src/evernote_api/src/UserStore_types.h \
  src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
- src/evernote_api/src/Errors_types.h src/DatabaseClient.h
+ src/evernote_api/src/Errors_types.h src/DatabaseClient.h \
+ src/BetternoteUtils.h src/evernote_api/src/NoteStore_types.h
 NotebookTreeStore.o: src/NotebookTreeStore.cpp src/NotebookTreeStore.h \
  src/evernote_api/src/NoteStore_types.h \
  src/evernote_api/src/UserStore_types.h \

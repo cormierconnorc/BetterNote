@@ -63,6 +63,7 @@ void EvernoteClient::synchronize()
 	{
 		//Locally purge deleted notes (currently no trash features)
 		db->purgeDeletedNotes();
+		db->purgeDeletedNoteResources();
 		
 		signalOnSyncComplete.emit();
 
@@ -209,6 +210,9 @@ void EvernoteClient::processChunk(const SyncChunk& chunk, bool fullSync)
 
 					//Update it in the database
 					db->updateNote(sNote);
+
+					//Only process note resources if local note was not dirty
+					processResources(sNote);
 				}
 				else
 				{
@@ -227,31 +231,8 @@ void EvernoteClient::processChunk(const SyncChunk& chunk, bool fullSync)
 
 			//Add to the database
 			db->addNote(sNote);
-		}
 
-
-		//Process note resources
-		for (vector<Resource>::iterator it = sNote.resources.begin(); it != sNote.resources.end(); it++)
-		{
-			Resource r = *it;
-			Resource lr;
-			
-			if (!db->getResourceByGuid(lr, r.guid, false))
-			{
-				//Get the resource's data and attributse
-				nStore->getResource(r, devToken, r.guid, true, false, true, false);
-
-				//Add resource to database
-				db->addResource(r);
-			}
-			//Dirty or not, just update the local resource if the server's is newer
-			else if (r.updateSequenceNum > lr.updateSequenceNum)
-			{
-				nStore->getResource(r, devToken, r.guid, true, false, true, false);
-				
-				db->updateResource(r);
-				db->unflagDirty(r);
-			}
+			processResources(sNote);
 		}
 	}
 
@@ -277,6 +258,33 @@ void EvernoteClient::processChunk(const SyncChunk& chunk, bool fullSync)
 
 }
 
+void EvernoteClient::processResources(const Note& sNote)
+{
+	//Process note resources
+	for (vector<Resource>::const_iterator it = sNote.resources.begin(); it != sNote.resources.end(); it++)
+	{
+		Resource r = *it;
+		Resource lr;
+		
+		if (!db->getResourceByGuid(lr, r.guid, false))
+		{
+			//Get the resource's data and attributse
+			nStore->getResource(r, devToken, r.guid, true, false, true, false);
+
+			//Add resource to database
+			db->addResource(r);
+		}
+		//Dirty or not, just update the local resource if the server's is newer
+		else if (r.updateSequenceNum > lr.updateSequenceNum)
+		{
+			nStore->getResource(r, devToken, r.guid, true, false, true, false);
+			
+			db->updateResource(r);
+			db->unflagDirty(r);
+		}
+	}
+}
+
 bool EvernoteClient::sendClientChanges()
 {
 	bool needResync = false;
@@ -288,6 +296,30 @@ bool EvernoteClient::sendClientChanges()
 	for (size_t t = 0; t < dirtyNotes.size(); t++)
 	{
 		Note dNote = dirtyNotes[t];
+
+		//Set the resources for the note to send
+		vector<Resource> dirtyResources;
+		db->getDirtyResourcesInNote(dirtyResources, dNote);
+
+		//Only set up note resources to sync if there are dirty ones to send
+		if (dirtyResources.size() > 0)
+		{
+			dNote.__isset.resources = true;
+
+			//Send all resources on single resource update
+			db->getResourcesInNote(dirtyResources, dNote);
+
+			//Insert full data of all notes
+			dNote.resources.insert(dNote.resources.end(), dirtyResources.begin(), dirtyResources.end());
+
+			//Insert metadata of clean resources
+			//vector<Resource> cleanMetadata;
+			//db->getCleanResourcesInNoteNoData(cleanMetadata, dNote);
+			//dNote.resources.insert(dNote.resources.end(), cleanMetadata.begin(), cleanMetadata.end());
+
+			//Now set all the dirty resources in the note to clean so they won't resync:
+			db->unflagNoteResourcesDirty(dNote);
+		}
 
 		if (dNote.__isset.updateSequenceNum)
 		{

@@ -16,7 +16,9 @@
 
 const std::string NOTE_HEAD = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE en-note SYSTEM \"http://xml.evernote.com/pub/enml2.dtd\">\n";
 const std::string RES_DIR = "res/";
+const std::string FILE_SRC = "file://";
 
+//Structure to hold information on inflated file
 struct ResInfo
 {
 	std::string fileLoc;
@@ -67,6 +69,7 @@ private:
 	//Currently displayed note
 	evernote::edam::Note note;
 	std::map<std::string, ResInfo> resLocs;
+	std::map<std::string, ResInfo> updateRes;
 
 	//Gtkmm widgets that belong to the note view, accessed via builder
 	Gtk::Entry *noteTitle;
@@ -88,13 +91,25 @@ private:
 	void stripTag(std::string& ret, size_t tagPos);
 
 	//Media formatting
-	void handleMedia(std::string& ret);
-	std::string getReplacementTag(std::string mediaTag);
+	void handleMediaInflate(std::string& ret);
+	void handleMediaDeflate(std::string& ret);
+	void doTagReplace(std::string& ret, const std::string& tabOpen, std::string (NoteView::*getReplacement)(std::string));
+	std::string getInflateReplacementTag(std::string mediaTag);
+	//Note: deflation replacement method also handles resource updating
+	//in a bit of poor design that will likely be remedied later on
+	std::string getDeflateReplacementTag(std::string mediaTag);
 	std::string getProperty(std::string& mediaTag, std::string prop, bool strip = false);
 
 	//Resource management methods
 	void inflateResources(const evernote::edam::Note& note);
 	std::string inflateResource(const evernote::edam::Resource& res);
+
+	//Resource finalization
+	void removeOrphans();
+	void finalizeResources();
+	//Delete a file only if it is in the resource directory,
+	//return true if deleted, false otherwise
+	bool deleteIfInRes(const std::string& fileLoc);
 
 	//Key listener to change editing actions
 	bool onKeyPress(GdkEventKey *event);
@@ -116,6 +131,15 @@ private:
 	static gboolean handleDownload(WebKitWebView *view,
 								   WebKitDownload *download,
 								   gpointer nView);
+
+	static void handlePaste(GtkWidget *viewWidget,
+							GdkDragContext *context,
+							gint x,
+							gint y,
+							GtkSelectionData *data,
+							guint info,
+							guint time,
+							gpointer nView);
 };
 
 #endif

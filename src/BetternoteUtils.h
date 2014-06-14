@@ -23,6 +23,14 @@ namespace Util
 	//Convert strings between hexadecimal and binary representations
 	std::string hexToBinaryString(std::string hex);
 	std::string binaryToHexString(std::string bin);
+
+	//Binary file write and read functions
+	bool writeFile(const std::string& filePath, const std::string& fileContent);
+	bool readFile(const std::string& filePath, std::string& fileContent);
+
+	//Glib checksum function wrappers
+	std::string getHexChecksum(const std::string& data);
+	std::string getBinaryChecksum(const std::string& data);
 }
 
 #endif

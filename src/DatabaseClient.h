@@ -68,6 +68,7 @@ public:
 	bool addResource(const evernote::edam::Resource& res);
 	bool updateResource(const evernote::edam::Resource& res);
 	bool removeResource(const evernote::edam::Resource& res);
+	bool purgeDeletedNoteResources();
 
 	//Special dirty methods for synchronization. Note: if no dirty resources in note, leave note resource field unset for the sync. Otherwise, merge the vectors filled by these two methods
 	bool getDirtyResourcesInNote(std::vector<evernote::edam::Resource>& ret, const evernote::edam::Note& note);
@@ -97,6 +98,12 @@ public:
 	bool unflagDirty(const evernote::edam::Notebook& notebook);
 	bool unflagDirty(const evernote::edam::Note& note);
 	bool unflagDirty(const evernote::edam::Resource& res);
+	bool unflagNoteResourcesDirty(const evernote::edam::Note& res);
+
+	//Helper methods to set appropriate fields in notes or notebooks
+	void prepareNotebook(evernote::edam::Notebook& notebook);
+	void prepareNote(evernote::edam::Note& note);
+	void prepareResource(evernote::edam::Resource& resource, bool withData);
 
 private:
 	//The database connection "object"
@@ -131,6 +138,7 @@ private:
 			*sAddResource,
 			*sUpdateResource,
 			*sRemoveResource,
+			*sPurgeDeletedNoteResources,
 			*sGetDirtyResourcesInNote,
 			*sGetCleanResourcesInNoteNoData,
 			*sGetDirtyNotebooks,
@@ -141,7 +149,8 @@ private:
 			*sSetNotebookDirty,
 			*sSetNoteDirty,
 			*sSetResourceDirty,
-			*sFlagNotesInNotebookDirty;
+			*sFlagNotesInNotebookDirty,
+			*sUnflagNoteResourcesDirty;
 
 
 	//Method to execute statement synchronously with no result returned
@@ -157,11 +166,6 @@ private:
 
 	//Reset and unbind statment. Just a convenience wrapper meant to cut down code length
 	void sReset(sqlite3_stmt *stat);
-
-	//Helper methods to set appropriate fields in notes or notebooks
-	void prepareNotebook(evernote::edam::Notebook& notebook);
-	void prepareNote(evernote::edam::Note& note);
-	void prepareResource(evernote::edam::Resource& resource, bool withData);
 
 	//Methods to fetch notes and notebooks from database once statement has been prepared
 	//These DO NOT reset or unbind statements

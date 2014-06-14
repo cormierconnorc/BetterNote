@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <sstream>
+#include <fstream>
+#include <gtkmm.h>
 
 
 using namespace evernote::edam;
@@ -109,4 +111,66 @@ string Util::binaryToHexString(string bin)
 	}
 
 	return string(buffer, bin.length() * 2);
+}
+
+bool Util::writeFile(const string& filePath, const std::string& fileContent)
+{
+	//Open file
+	ofstream out;
+	out.open(filePath.c_str(), ios::out | ios::binary);
+
+	//Write to file
+	if (out.is_open())
+		out.write(fileContent.c_str(), fileContent.length());
+	else
+	{
+		cerr << "Could not write resource to file" << endl;
+		return false;
+	}
+
+	out.close();
+
+	return true;
+}
+
+bool Util::readFile(const string& filePath, string& fileContent)
+{
+	fileContent = "";
+
+	size_t bufLen = 16 * 1024;
+	char buffer[bufLen];
+	
+	ifstream in;
+
+	in.open(filePath.c_str(), ios::in | ios::binary);
+	
+	if (in.is_open())
+	{
+		while (in)
+		{
+			in.read(buffer, bufLen);
+
+			//Append to string
+			fileContent.append(buffer, in.gcount());
+		}
+	}
+	else
+	{
+		cerr << "Could not read from file" << endl;
+		return false;
+	}
+
+	in.close();
+
+	return true;
+}
+
+string Util::getHexChecksum(const string& data)
+{
+	return Glib::Checksum::compute_checksum(Glib::Checksum::CHECKSUM_MD5, data);
+}
+
+string Util::getBinaryChecksum(const string& data)
+{
+	return hexToBinaryString(getHexChecksum(data));
 }
