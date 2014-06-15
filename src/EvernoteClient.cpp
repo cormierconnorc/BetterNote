@@ -488,14 +488,14 @@ void EvernoteClient::setupClient()
 	//Credit to "Rambus": https://discussion.evernote.com/topic/27583-evernote-c-example-code/
 	//And baumgarr, from the Nixnote 2 source code.
 	//SSL setup: DISABLED
-	/*
+	
 	boost::shared_ptr<TSSLSocketFactory> factory = getSslSocketFactory();
 	noteStoreSocket = boost::shared_ptr<TSSLSocket>(factory->createSocket(devHost, 443));
 	boost::shared_ptr<TBufferedTransport> transport(new TBufferedTransport(noteStoreSocket));
-	*/
+	
 	
 	//Setup http client
-	nStoreHttpClient = boost::shared_ptr<TTransport>(new THttpClient(devHost, 80, devPath));/*new THttpClient(transport, devHost, devPath));*/
+	nStoreHttpClient = boost::shared_ptr<TTransport>(new THttpClient(devHost, 80, devPath));/*/new THttpClient(transport, devHost, devPath));*/
 	nStoreHttpClient->open();
 
 	//Set protocol

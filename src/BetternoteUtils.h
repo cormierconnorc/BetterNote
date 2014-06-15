@@ -27,10 +27,14 @@ namespace Util
 	//Binary file write and read functions
 	bool writeFile(const std::string& filePath, const std::string& fileContent);
 	bool readFile(const std::string& filePath, std::string& fileContent);
+	bool isValidFile(const std::string& filePath);
 
 	//Glib checksum function wrappers
 	std::string getHexChecksum(const std::string& data);
 	std::string getBinaryChecksum(const std::string& data);
+
+	//Use gio to get the appropriate file mime type
+	std::string getMimeType(const std::string& fileName, const std::string& fileData);
 }
 
 #endif

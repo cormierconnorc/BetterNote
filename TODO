@@ -7,6 +7,3 @@ N. Sort notebooks and notes
 A1. SSH
 A2. OAuth
 A3. User authentication
-B1. Move note formatting functions to dedicated class for cleaner code
-B2. Implement resource handling
---Mostly complete: fix update bug.

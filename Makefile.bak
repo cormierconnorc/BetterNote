@@ -1,0 +1,241 @@
+#Connor Cormier
+#gtkmm Makefile
+
+CXX = g++
+CXXFLAGS = -Wall -O2 `pkg-config gtkmm-3.0 --cflags --libs` `pkg-config thrift --cflags --libs` `pkg-config webkitgtk-3.0 --cflags --libs` `pkg-config sqlite3 --cflags --libs` -I$(CURDIR)
+
+SRC_DIR = src/
+SRCS = $(wildcard $(SRC_DIR)*.cpp) $(wildcard $(SRC_DIR)evernote_api/src/*.cpp)
+EXE_NAME = betternote
+
+OFILES = $(SRCS:.cpp=.o)
+
+.SUFFIXES: .o .cpp
+
+link: $(OFILES)
+	$(CXX) $(CXXFLAGS) $^ -o $(EXE_NAME)
+
+#update dependencies
+up_deps: $(SRCS)
+	sed '/#START\ DEPS/q' Makefile > Makefile.out
+	$(CXX) -MM $(SRCS) $^ >> Makefile.out
+	mv Makefile.out Makefile
+
+clean:
+	rm -rf $(SRC_DIR){*~,*#,*.o}
+
+burn:
+	rm -rf $(SRC_DIR){*~,*#,*.o} 
+	rm -rf $(SRC_DIR)evernote_api/src/{*~,*#,*.o}
+
+#START DEPS
+NoteView.o: src/NoteView.cpp src/NoteView.h \
+ src/evernote_api/src/NoteStore.h src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h src/DatabaseClient.h \
+ src/BetternoteUtils.h src/evernote_api/src/NoteStore_types.h
+NotebookTreeStore.o: src/NotebookTreeStore.cpp src/NotebookTreeStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+NoteListStore.o: src/NoteListStore.cpp src/NoteListStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+EvernoteClient.o: src/EvernoteClient.cpp src/EvernoteClient.h \
+ src/DatabaseClient.h src/evernote_api/src/NoteStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h \
+ src/evernote_api/src/Limits_constants.h
+BetternoteUtils.o: src/BetternoteUtils.cpp src/BetternoteUtils.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+NoteSelector.o: src/NoteSelector.cpp src/NoteSelector.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h src/NoteListStore.h
+Main.o: src/Main.cpp src/NoteWindow.h src/EvernoteClient.h \
+ src/DatabaseClient.h src/evernote_api/src/NoteStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h \
+ src/evernote_api/src/Limits_constants.h src/NoteView.h \
+ src/NotebookSelector.h src/evernote_api/src/NoteStore_types.h \
+ src/NotebookTreeStore.h src/NoteSelector.h src/BetternoteUtils.h
+NoteWindow.o: src/NoteWindow.cpp src/NoteWindow.h src/EvernoteClient.h \
+ src/DatabaseClient.h src/evernote_api/src/NoteStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h \
+ src/evernote_api/src/Limits_constants.h src/NoteView.h \
+ src/NotebookSelector.h src/evernote_api/src/NoteStore_types.h \
+ src/NotebookTreeStore.h src/NoteSelector.h src/BetternoteUtils.h
+DatabaseClient.o: src/DatabaseClient.cpp src/DatabaseClient.h \
+ src/evernote_api/src/NoteStore.h src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+NotebookSelector.o: src/NotebookSelector.cpp src/NotebookSelector.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h src/NotebookTreeStore.h
+NoteStore_constants.o: src/evernote_api/src/NoteStore_constants.cpp \
+ src/evernote_api/src/NoteStore_constants.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+Limits_types.o: src/evernote_api/src/Limits_types.cpp \
+ src/evernote_api/src/Limits_types.h
+Errors_types.o: src/evernote_api/src/Errors_types.cpp \
+ src/evernote_api/src/Errors_types.h
+NoteStore.o: src/evernote_api/src/NoteStore.cpp \
+ src/evernote_api/src/NoteStore.h src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+Limits_constants.o: src/evernote_api/src/Limits_constants.cpp \
+ src/evernote_api/src/Limits_constants.h \
+ src/evernote_api/src/Limits_types.h
+Errors_constants.o: src/evernote_api/src/Errors_constants.cpp \
+ src/evernote_api/src/Errors_constants.h \
+ src/evernote_api/src/Errors_types.h
+UserStore_constants.o: src/evernote_api/src/UserStore_constants.cpp \
+ src/evernote_api/src/UserStore_constants.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+Types_constants.o: src/evernote_api/src/Types_constants.cpp \
+ src/evernote_api/src/Types_constants.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h
+UserStore_types.o: src/evernote_api/src/UserStore_types.cpp \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+Types_types.o: src/evernote_api/src/Types_types.cpp \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h
+UserStore.o: src/evernote_api/src/UserStore.cpp \
+ src/evernote_api/src/UserStore.h src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+NoteStore_types.o: src/evernote_api/src/NoteStore_types.cpp \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+NoteView.o: src/NoteView.cpp src/NoteView.h \
+ src/evernote_api/src/NoteStore.h src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h src/DatabaseClient.h \
+ src/BetternoteUtils.h src/evernote_api/src/NoteStore_types.h
+NotebookTreeStore.o: src/NotebookTreeStore.cpp src/NotebookTreeStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+NoteListStore.o: src/NoteListStore.cpp src/NoteListStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+EvernoteClient.o: src/EvernoteClient.cpp src/EvernoteClient.h \
+ src/DatabaseClient.h src/evernote_api/src/NoteStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h \
+ src/evernote_api/src/Limits_constants.h
+BetternoteUtils.o: src/BetternoteUtils.cpp src/BetternoteUtils.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+NoteSelector.o: src/NoteSelector.cpp src/NoteSelector.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h src/NoteListStore.h
+Main.o: src/Main.cpp src/NoteWindow.h src/EvernoteClient.h \
+ src/DatabaseClient.h src/evernote_api/src/NoteStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h \
+ src/evernote_api/src/Limits_constants.h src/NoteView.h \
+ src/NotebookSelector.h src/evernote_api/src/NoteStore_types.h \
+ src/NotebookTreeStore.h src/NoteSelector.h src/BetternoteUtils.h
+NoteWindow.o: src/NoteWindow.cpp src/NoteWindow.h src/EvernoteClient.h \
+ src/DatabaseClient.h src/evernote_api/src/NoteStore.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h \
+ src/evernote_api/src/Limits_constants.h src/NoteView.h \
+ src/NotebookSelector.h src/evernote_api/src/NoteStore_types.h \
+ src/NotebookTreeStore.h src/NoteSelector.h src/BetternoteUtils.h
+DatabaseClient.o: src/DatabaseClient.cpp src/DatabaseClient.h \
+ src/evernote_api/src/NoteStore.h src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+NotebookSelector.o: src/NotebookSelector.cpp src/NotebookSelector.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h src/NotebookTreeStore.h
+NoteStore_constants.o: src/evernote_api/src/NoteStore_constants.cpp \
+ src/evernote_api/src/NoteStore_constants.h \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+Limits_types.o: src/evernote_api/src/Limits_types.cpp \
+ src/evernote_api/src/Limits_types.h
+Errors_types.o: src/evernote_api/src/Errors_types.cpp \
+ src/evernote_api/src/Errors_types.h
+NoteStore.o: src/evernote_api/src/NoteStore.cpp \
+ src/evernote_api/src/NoteStore.h src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+Limits_constants.o: src/evernote_api/src/Limits_constants.cpp \
+ src/evernote_api/src/Limits_constants.h \
+ src/evernote_api/src/Limits_types.h
+Errors_constants.o: src/evernote_api/src/Errors_constants.cpp \
+ src/evernote_api/src/Errors_constants.h \
+ src/evernote_api/src/Errors_types.h
+UserStore_constants.o: src/evernote_api/src/UserStore_constants.cpp \
+ src/evernote_api/src/UserStore_constants.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+Types_constants.o: src/evernote_api/src/Types_constants.cpp \
+ src/evernote_api/src/Types_constants.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h
+UserStore_types.o: src/evernote_api/src/UserStore_types.cpp \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+Types_types.o: src/evernote_api/src/Types_types.cpp \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h
+UserStore.o: src/evernote_api/src/UserStore.cpp \
+ src/evernote_api/src/UserStore.h src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h
+NoteStore_types.o: src/evernote_api/src/NoteStore_types.cpp \
+ src/evernote_api/src/NoteStore_types.h \
+ src/evernote_api/src/UserStore_types.h \
+ src/evernote_api/src/Types_types.h src/evernote_api/src/Limits_types.h \
+ src/evernote_api/src/Errors_types.h

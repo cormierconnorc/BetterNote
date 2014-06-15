@@ -120,6 +120,10 @@ private:
 	void onInsertOrderedClick();
 	void onInsertUnorderedClick();
 
+	//Paste tag handling
+	std::string getFileTag(std::string inputUri);
+	WebKitDOMNode *getFileDomTag(std::string inputUri);
+
 	//Web view signal handlers. Must be static, receiving this as a parameter.
 	static gboolean handleNavigation(WebKitWebView *view,
 							  WebKitWebFrame *frame,
@@ -132,14 +136,17 @@ private:
 								   WebKitDownload *download,
 								   gpointer nView);
 
-	static void handlePaste(GtkWidget *viewWidget,
-							GdkDragContext *context,
-							gint x,
-							gint y,
-							GtkSelectionData *data,
-							guint info,
-							guint time,
-							gpointer nView);
+	static void handleInsert(WebKitWebView *view,
+								 WebKitDOMNode *node,
+								 WebKitDOMRange *range,
+								 WebKitInsertAction action,
+								 gpointer data);
+
+	static void handleInsertText(WebKitWebView *view,
+								 gchar *mStr,
+								 WebKitDOMRange *range,
+								 WebKitInsertAction action,
+								 gpointer data);
 };
 
 #endif

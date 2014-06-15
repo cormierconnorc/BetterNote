@@ -174,6 +174,13 @@ void NoteView::showWebView()
 	//Set editable
 	webkit_web_view_set_editable(view, true);
 
+	//Show
+	gtk_widget_show(GTK_WIDGET(view));
+
+	//Show it in the container
+	gtk_container_add(GTK_CONTAINER(primaryWindow->gobj()), GTK_WIDGET(view));
+
+	
 	//Set signal handlers
 	//Navigation handler
 	g_signal_connect(G_OBJECT(view),
@@ -185,17 +192,16 @@ void NoteView::showWebView()
 					 "download-requested",
 					 G_CALLBACK(&NoteView::handleDownload),
 					 this);
-	//Bind webview's drag-data-get. Change data as necessary to link file
+	//Bind node insertion
 	g_signal_connect(G_OBJECT(view),
-					 "drag-data-received",
-					 G_CALLBACK(&NoteView::handlePaste),
+					 "should-insert-node",
+					 G_CALLBACK(&NoteView::handleInsert),
 					 this);
-	
-	//Show
-	gtk_widget_show(GTK_WIDGET(view));
-
-	//Show it in the container
-	gtk_container_add(GTK_CONTAINER(primaryWindow->gobj()), GTK_WIDGET(view));
+	//Bind text insertion
+	g_signal_connect(G_OBJECT(view),
+					 "should-insert-text",
+					 G_CALLBACK(&NoteView::handleInsertText),
+					 this);
 }
 
 void NoteView::toHtml(string& ret)
@@ -434,18 +440,9 @@ string NoteView::getDeflateReplacementTag(std::string mediaTag)
 
 	//Now get the hash
 	string hash = Util::getBinaryChecksum(fileData);
+	string mimeType = Util::getMimeType(source, fileData);
 
-	//Also get the mime type from the file
-	gchar *res = g_content_type_guess(source.c_str(), (const unsigned char*)fileData.c_str(), fileData.length(), NULL);
-	gchar *mime = g_content_type_get_mime_type(res);
-
-	string mimeType = mime;
-
-	g_free(res);
-	g_free(mime);
-
-
-	string mediaInfo = "hash=\"" + Util::binaryToHexString(hash) + "\" type=\"" + mimeType + "\" /";
+	string mediaInfo = " hash=\"" + Util::binaryToHexString(hash) + "\" type=\"" + mimeType + "\" /";
 	
 	//Insert media tag completion into mediaTag
 	mediaTag.insert(mediaTag.find(">"), mediaInfo);
@@ -757,6 +754,95 @@ void NoteView::onInsertUnorderedClick()
 	execDom("insertUnorderedList");
 }
 
+string NoteView::getFileTag(string inputUri)
+{
+	//Format path
+	size_t ll;
+	while ((ll = inputUri.find("%20")) != string::npos)
+		inputUri.replace(ll, 3, " ");
+	inputUri = inputUri.substr(0, inputUri.find_last_not_of(" \t\r\n") + 1);
+	
+	size_t srcLoc = inputUri.find(FILE_SRC);
+	bool isUriFormat = srcLoc != string::npos;
+
+	//If in URI format, remove file://, otherwise leave as is
+	string filePath = isUriFormat ? inputUri.substr(srcLoc + FILE_SRC.length()) : inputUri;
+	//Append proper opener if not in uri format
+	string fileUri = isUriFormat ? inputUri : "file://" + inputUri;
+	
+	string fileData;
+	Util::readFile(filePath, fileData);
+	string mime = Util::getMimeType(filePath, fileData);
+
+	ostringstream tag;
+	
+	//Link this file in an image tag
+	if (mime.find("image") != string::npos)
+	{
+		tag << "<img src=\"" << fileUri << "\" width=\"" << gtk_widget_get_allocated_width(GTK_WIDGET(view)) << "\" />";
+	}
+	//Else link it in an anchor
+	else
+	{
+		tag << "<a href=\"" << fileUri << "\">" << filePath.substr(filePath.rfind("/") + 1) << "</a>";
+	}
+
+	return tag.str();
+}
+
+WebKitDOMNode *NoteView::getFileDomTag(string inputUri)
+{
+	//Format path
+	size_t ll;
+	while ((ll = inputUri.find("%20")) != string::npos)
+		inputUri.replace(ll, 3, " ");
+	inputUri = inputUri.substr(0, inputUri.find_last_not_of(" \t\r\n") + 1);
+	
+	size_t srcLoc = inputUri.find(FILE_SRC);
+	bool isUriFormat = srcLoc != string::npos;
+
+	//If in URI format, remove file://, otherwise leave as is
+	string filePath = isUriFormat ? inputUri.substr(srcLoc + FILE_SRC.length()) : inputUri;
+	//Append proper opener if not in uri format
+	string fileUri = isUriFormat ? inputUri : "file://" + inputUri;
+	
+	string fileData;
+	Util::readFile(filePath, fileData);
+	string mime = Util::getMimeType(filePath, fileData);
+
+	WebKitDOMDocument *doc = webkit_web_view_get_dom_document(view);
+	WebKitDOMNode *node;
+
+	if (mime.find("image") != string::npos)
+	{
+		WebKitDOMHTMLImageElement *image = (WebKitDOMHTMLImageElement *)webkit_dom_document_create_element(doc, "img", NULL);
+
+		//Set image source
+		webkit_dom_html_image_element_set_src(image, fileUri.c_str());
+		webkit_dom_html_image_element_set_width(image, gtk_widget_get_allocated_width(GTK_WIDGET(view)));
+
+		node = (WebKitDOMNode *)image;
+	}
+	else
+	{
+		WebKitDOMHTMLAnchorElement *anchor = (WebKitDOMHTMLAnchorElement *)webkit_dom_document_create_element(doc, "a", NULL);
+
+		webkit_dom_html_anchor_element_set_href(anchor, fileUri.c_str());
+
+		string fileName = filePath.substr(filePath.rfind("/") + 1);
+		
+		//Text child for this node
+		WebKitDOMText *text = (WebKitDOMText *)webkit_dom_document_create_text_node(doc, fileName.c_str());
+
+		//Insert the file name as a child of the node
+		webkit_dom_node_append_child((WebKitDOMNode*)anchor, (WebKitDOMNode*)text, NULL);
+		
+		node = (WebKitDOMNode *)anchor;
+	}
+
+	return node;
+}
+
 gboolean NoteView::handleNavigation(WebKitWebView *view, WebKitWebFrame *frame, WebKitNetworkRequest *request, WebKitWebNavigationAction *navAction, WebKitWebPolicyDecision *decision, gpointer nView)
 {
 	WebKitWebNavigationReason reason = webkit_web_navigation_action_get_reason(navAction);
@@ -778,14 +864,45 @@ gboolean NoteView::handleDownload(WebKitWebView *view, WebKitDownload *download,
 	return true;
 }
 
-void NoteView::handlePaste(GtkWidget *viewWidget, GdkDragContext *context, gint x, gint y, GtkSelectionData *data, guint info, guint time, gpointer nView)
+void NoteView::handleInsert(WebKitWebView *view, WebKitDOMNode *node, WebKitDOMRange *range, WebKitInsertAction action, gpointer data)
 {
-	//TODO
-	guchar *str = gtk_selection_data_get_text(data);
+	gchar *str = webkit_dom_node_get_text_content(node);
+	string s(str);
+	g_free(str);
 
-	if (str)
+	//Pasting a local file URI or referece to a valid file
+	if (s.find(FILE_SRC) != string::npos || Util::isValidFile(s))
+	{		
+		//Empty out the text content and insert a custom node instead
+		webkit_dom_node_set_text_content(node, "", NULL);
+
+		//Insert dom tag
+		webkit_dom_range_insert_node(range, ((NoteView*)data)->getFileDomTag(s), NULL);
+	}
+}
+
+void NoteView::handleInsertText(WebKitWebView *view, gchar *mStr, WebKitDOMRange *range, WebKitInsertAction action, gpointer data)
+{
+	//Immediately return if typed, not pasted. Just use default handler.
+	if (action == WEBKIT_INSERT_ACTION_TYPED)
+		return;
+
+	//Create a string object off of the gchar
+	string s(mStr);
+
+	//Now do the same thing as above:
+	if (s.find(FILE_SRC) != string::npos || (s[0] == '/' && s.length() > 1 && Util::isValidFile(s)))
 	{
-		cout << str << endl;
-		g_free(str);
+		//Insert a text node containing a new line before the file path.
+		//This is necessary to make this bug look more like a feature.
+		//Justification: I can't remove the default handler, or I'll have to
+		//manually handle all text insertion operations. I also can't alter
+		//the data to render the default handler inert, as I did with "handleInsert".
+		//This is because the default handler is set to come before any custom handlers.
+		//Basically, I'm out of luck, so this works for now.
+		webkit_dom_range_insert_node(range, (WebKitDOMNode*)webkit_dom_document_create_element(webkit_web_view_get_dom_document(view), "br", NULL), NULL);
+
+		//Insert dom tag
+		webkit_dom_range_insert_node(range, ((NoteView*)data)->getFileDomTag(s), NULL);
 	}
 }

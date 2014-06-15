@@ -165,6 +165,20 @@ bool Util::readFile(const string& filePath, string& fileContent)
 	return true;
 }
 
+bool Util::isValidFile(const string& filePath)
+{
+	ifstream in;
+	in.open(filePath.c_str(), ios::in | ios::binary);
+
+	if (in.is_open())
+	{		
+		in.close();
+		return true;
+	}
+	
+	return false;
+}
+
 string Util::getHexChecksum(const string& data)
 {
 	return Glib::Checksum::compute_checksum(Glib::Checksum::CHECKSUM_MD5, data);
@@ -173,4 +187,18 @@ string Util::getHexChecksum(const string& data)
 string Util::getBinaryChecksum(const string& data)
 {
 	return hexToBinaryString(getHexChecksum(data));
+}
+
+string Util::getMimeType(const string& fileName, const string& fileData)
+{
+	//Also get the mime type from the file
+	gchar *res = g_content_type_guess(fileName.c_str(), (const unsigned char*)fileData.c_str(), fileData.length(), NULL);
+	gchar *mime = g_content_type_get_mime_type(res);
+
+	string mimeType = mime;
+
+	g_free(res);
+	g_free(mime);
+
+	return mimeType;
 }
